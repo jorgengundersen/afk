@@ -26,21 +26,23 @@ var KnownHarnesses = map[string]bool{
 
 // Config holds all configuration for an afk session.
 type Config struct {
-	Mode          Mode
-	MaxIterations int
-	SleepInterval time.Duration
-	Harness       string
-	Model         string
-	AgentFlags    string
-	RawCommand    string
-	Prompt        string
-	BeadsEnabled  bool
-	BeadsLabels   []string
-	BeadsInstruct string
-	LogDir        string
-	Stderr        bool
-	Verbose       bool
-	Quiet         bool
+	Mode            Mode
+	MaxIterations   int
+	SleepInterval   time.Duration
+	Harness         string
+	Model           string
+	AgentFlags      string
+	RawCommand      string
+	Prompt          string
+	BeadsEnabled    bool
+	BeadsLabels     []string
+	BeadsInstruct   string
+	LogDir          string
+	Stderr          bool
+	Verbose         bool
+	Quiet           bool
+	Workdir         string
+	PassthroughArgs []string
 }
 
 // Validate checks all fail-fast conditions from the product spec.
