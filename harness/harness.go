@@ -16,7 +16,8 @@ type Harness interface {
 
 // binaryName maps harness names to their CLI binary names.
 var binaryName = map[string]string{
-	"claude": "claude",
+	"claude":   "claude",
+	"opencode": "opencode",
 }
 
 // New returns the appropriate harness implementation based on config.
@@ -34,6 +35,8 @@ func New(cfg config.Config) (Harness, error) {
 	switch cfg.Harness {
 	case "claude":
 		return newClaude(cfg), nil
+	case "opencode":
+		return newOpenCode(cfg), nil
 	default:
 		return nil, fmt.Errorf("unknown harness %q", cfg.Harness)
 	}
