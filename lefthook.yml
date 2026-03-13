@@ -1,0 +1,16 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      run: gofmt -l . | grep . && exit 1 || exit 0
+    vet:
+      run: go vet ./...
+    build:
+      run: go build ./...
+    test:
+      run: go test -race ./...
+    beads-hooks:
+      run: bd hooks run pre-commit
+      env:
+        BD_GIT_HOOK: "1"
+      skip_empty_staging: false
