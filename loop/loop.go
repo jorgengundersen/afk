@@ -74,3 +74,48 @@ func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 	log.Event("iteration_end", Field{"status", "ok"})
 	return true, nil
 }
+
+// ErrAllFailed is returned when every iteration's harness returned non-zero.
+var ErrAllFailed = errors.New("all iterations failed")
+
+// RunMaxIter runs RunOnce up to cfg.MaxIterations times.
+// Stops early if RunOnce returns no work or context is cancelled.
+// Returns ErrAllFailed if every iteration failed.
+func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) error {
+	log.Event("loop_start")
+
+	var total, succeeded, failed int
+
+	for i := 0; i < cfg.MaxIterations; i++ {
+		ran, err := RunOnce(ctx, cfg, h, bc, log)
+		if ctx.Err() != nil {
+			log.Event("loop_end",
+				Field{"total", fmt.Sprintf("%d", total)},
+				Field{"succeeded", fmt.Sprintf("%d", succeeded)},
+				Field{"failed", fmt.Sprintf("%d", failed)},
+			)
+			return nil
+		}
+		if !ran && err == nil {
+			// No work available, stop early.
+			break
+		}
+		total++
+		if err != nil {
+			failed++
+		} else {
+			succeeded++
+		}
+	}
+
+	log.Event("loop_end",
+		Field{"total", fmt.Sprintf("%d", total)},
+		Field{"succeeded", fmt.Sprintf("%d", succeeded)},
+		Field{"failed", fmt.Sprintf("%d", failed)},
+	)
+
+	if total > 0 && failed == total {
+		return ErrAllFailed
+	}
+	return nil
+}
