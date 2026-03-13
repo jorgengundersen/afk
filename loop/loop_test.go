@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jorgengundersen/afk/beads"
 	"github.com/jorgengundersen/afk/config"
@@ -399,6 +400,219 @@ func TestRunMaxIter_NIterations(t *testing.T) {
 	}
 	if !hasField(last.fields, "succeeded", "3") {
 		t.Errorf("expected succeeded=3, got %v", last.fields)
+	}
+}
+
+func TestRunDaemon_CleanShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel immediately so daemon exits on first context check.
+	cancel()
+
+	l := &fakeLogger{}
+	h := &fakeHarness{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: time.Millisecond,
+		Prompt:        "do it",
+		Harness:       "claude",
+	}
+
+	err := RunDaemon(ctx, cfg, h, nil, l)
+	if err != nil {
+		t.Fatalf("expected nil on clean shutdown, got: %v", err)
+	}
+
+	// Must have daemon_start and daemon_stop events.
+	if len(l.events) < 2 {
+		t.Fatalf("expected at least 2 events, got %d", len(l.events))
+	}
+	if l.events[0].name != "daemon_start" {
+		t.Errorf("first event = %q, want daemon_start", l.events[0].name)
+	}
+	last := l.events[len(l.events)-1]
+	if last.name != "daemon_stop" {
+		t.Errorf("last event = %q, want daemon_stop", last.name)
+	}
+}
+
+func TestRunDaemon_SleepWakeCycle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Beads returns no work twice, then cancel.
+	b := &multiBeads{results: []beadsResult{
+		{err: beads.ErrNoWork},
+		{err: beads.ErrNoWork},
+	}}
+	h := &fakeHarness{}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: time.Millisecond,
+		BeadsEnabled:  true,
+		Prompt:        "",
+		Harness:       "claude",
+	}
+
+	// Cancel after 2 sleep/wake cycles by watching log events.
+	wakeCount := 0
+	countingLogger := &callbackLogger{
+		inner: l,
+		onEvent: func(name string) {
+			if name == "waking" {
+				wakeCount++
+				if wakeCount >= 2 {
+					cancel()
+				}
+			}
+		},
+	}
+
+	err := RunDaemon(ctx, cfg, h, b, countingLogger)
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+
+	// Verify sleeping and waking events were logged.
+	var sleepCount, wakeEvtCount int
+	for _, e := range countingLogger.inner.events {
+		switch e.name {
+		case "sleeping":
+			sleepCount++
+			if !hasField(e.fields, "duration", "1ms") {
+				t.Errorf("sleeping event missing duration=1ms, got %v", e.fields)
+			}
+		case "waking":
+			wakeEvtCount++
+		}
+	}
+	if sleepCount < 2 {
+		t.Errorf("expected at least 2 sleeping events, got %d", sleepCount)
+	}
+	if wakeEvtCount < 2 {
+		t.Errorf("expected at least 2 waking events, got %d", wakeEvtCount)
+	}
+}
+
+func TestRunDaemon_ImmediateRecheckAfterWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// First call: work available. Second call: work available. Third: cancel.
+	issue := beads.Issue{ID: "T-1", Title: "Fix"}
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{issue}},
+		{issues: []beads.Issue{issue}},
+	}}
+	harnessCallCount := 0
+	cancelAfterTwo := &callbackHarness{
+		onRun: func() {
+			harnessCallCount++
+			if harnessCallCount >= 2 {
+				cancel()
+			}
+		},
+	}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: 10 * time.Second, // Long sleep — should NOT be hit.
+		BeadsEnabled:  true,
+		Prompt:        "do it",
+		Harness:       "claude",
+	}
+
+	start := time.Now()
+	err := RunDaemon(ctx, cfg, cancelAfterTwo, b, l)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if harnessCallCount < 2 {
+		t.Fatalf("expected at least 2 harness calls, got %d", harnessCallCount)
+	}
+	// If sleep was triggered, this would take >=10s. Should be near-instant.
+	if elapsed > 5*time.Second {
+		t.Fatalf("took %v — sleep should not have been triggered between work iterations", elapsed)
+	}
+
+	// Verify no sleeping events were logged.
+	for _, e := range l.events {
+		if e.name == "sleeping" {
+			t.Error("sleeping event should not be logged when work is available")
+		}
+	}
+}
+
+func TestRunDaemon_ContextCancelDuringSleep(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Return no work so daemon enters sleep with a long interval.
+	b := &fakeBeads{err: beads.ErrNoWork}
+	h := &fakeHarness{}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: 10 * time.Minute, // Very long — must be interrupted by cancel.
+		BeadsEnabled:  true,
+		Prompt:        "",
+		Harness:       "claude",
+	}
+
+	// Cancel shortly after daemon enters sleep.
+	sleepLogger := &callbackLogger{
+		inner: l,
+		onEvent: func(name string) {
+			if name == "sleeping" {
+				go func() {
+					time.Sleep(5 * time.Millisecond)
+					cancel()
+				}()
+			}
+		},
+	}
+
+	start := time.Now()
+	err := RunDaemon(ctx, cfg, h, b, sleepLogger)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	// Should exit quickly, not wait for 10 minutes.
+	if elapsed > 5*time.Second {
+		t.Fatalf("took %v — context cancel during sleep should exit immediately", elapsed)
+	}
+
+	// daemon_stop must be the last event.
+	last := sleepLogger.inner.events[len(sleepLogger.inner.events)-1]
+	if last.name != "daemon_stop" {
+		t.Errorf("last event = %q, want daemon_stop", last.name)
+	}
+}
+
+// callbackHarness calls a callback on each Run invocation.
+type callbackHarness struct {
+	onRun func()
+}
+
+func (c *callbackHarness) Run(_ context.Context, _ string) (int, error) {
+	if c.onRun != nil {
+		c.onRun()
+	}
+	return 0, nil
+}
+
+// callbackLogger wraps fakeLogger and fires a callback on each event.
+type callbackLogger struct {
+	inner   *fakeLogger
+	onEvent func(name string)
+}
+
+func (c *callbackLogger) Event(name string, fields ...Field) {
+	c.inner.Event(name, fields...)
+	if c.onEvent != nil {
+		c.onEvent(name)
 	}
 }
 

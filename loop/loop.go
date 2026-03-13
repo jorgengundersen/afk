@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jorgengundersen/afk/beads"
 	"github.com/jorgengundersen/afk/config"
@@ -73,6 +74,40 @@ func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 
 	log.Event("iteration_end", Field{"status", "ok"})
 	return true, nil
+}
+
+// RunDaemon runs RunOnce in a loop indefinitely until the context is cancelled.
+// When RunOnce returns no work, it sleeps for cfg.SleepInterval before re-checking.
+// When RunOnce returns work done, it immediately checks for the next issue.
+func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) error {
+	log.Event("daemon_start")
+
+	for {
+		if ctx.Err() != nil {
+			log.Event("daemon_stop")
+			return nil
+		}
+
+		ran, _ := RunOnce(ctx, cfg, h, bc, log)
+
+		if ctx.Err() != nil {
+			log.Event("daemon_stop")
+			return nil
+		}
+
+		if !ran {
+			log.Event("sleeping", Field{"duration", cfg.SleepInterval.String()})
+			t := time.NewTimer(cfg.SleepInterval)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				log.Event("daemon_stop")
+				return nil
+			case <-t.C:
+			}
+			log.Event("waking")
+		}
+	}
 }
 
 // ErrAllFailed is returned when every iteration's harness returned non-zero.
