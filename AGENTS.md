@@ -2,6 +2,10 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+## Development Practice
+
+**Red/green TDD** — one failing test, one implementation, commit. No code without a failing test first.
+
 ## Quick Reference
 
 ```bash
