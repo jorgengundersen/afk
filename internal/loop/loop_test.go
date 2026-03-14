@@ -77,12 +77,12 @@ func TestRunOnce_HappyPath(t *testing.T) {
 	if len(l.events) < 2 {
 		t.Fatalf("expected at least 2 log events, got %d", len(l.events))
 	}
-	if l.events[0].name != "iteration_start" {
-		t.Errorf("first event = %q, want iteration_start", l.events[0].name)
+	if l.events[0].name != "iteration-start" {
+		t.Errorf("first event = %q, want iteration-start", l.events[0].name)
 	}
 	last := l.events[len(l.events)-1]
-	if last.name != "iteration_end" {
-		t.Errorf("last event = %q, want iteration_end", last.name)
+	if last.name != "iteration-end" {
+		t.Errorf("last event = %q, want iteration-end", last.name)
 	}
 	if !hasField(last.fields, "status", "ok") {
 		t.Errorf("iteration_end missing status=ok, fields: %v", last.fields)
@@ -238,13 +238,13 @@ func TestRunMaxIter_SingleSuccess(t *testing.T) {
 		t.Fatalf("expected 1 harness call, got %d", h.calls)
 	}
 
-	// Check loop_start and loop_end events
-	if l.events[0].name != "loop_start" {
-		t.Errorf("first event = %q, want loop_start", l.events[0].name)
+	// Check session-start and session-end events
+	if l.events[0].name != "session-start" {
+		t.Errorf("first event = %q, want session-start", l.events[0].name)
 	}
 	last := l.events[len(l.events)-1]
-	if last.name != "loop_end" {
-		t.Errorf("last event = %q, want loop_end", last.name)
+	if last.name != "session-end" {
+		t.Errorf("last event = %q, want session-end", last.name)
 	}
 	if !hasField(last.fields, "total", "1") {
 		t.Errorf("expected total=1, got %v", last.fields)
@@ -287,8 +287,8 @@ func TestRunMaxIter_ContextCancel(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if last.name != "loop_end" {
-		t.Errorf("last event = %q, want loop_end", last.name)
+	if last.name != "session-end" {
+		t.Errorf("last event = %q, want session-end", last.name)
 	}
 }
 
@@ -425,16 +425,16 @@ func TestRunDaemon_CleanShutdown(t *testing.T) {
 		t.Fatalf("expected nil on clean shutdown, got: %v", err)
 	}
 
-	// Must have daemon_start and daemon_stop events.
+	// Must have session-start and session-end events.
 	if len(l.events) < 2 {
 		t.Fatalf("expected at least 2 events, got %d", len(l.events))
 	}
-	if l.events[0].name != "daemon_start" {
-		t.Errorf("first event = %q, want daemon_start", l.events[0].name)
+	if l.events[0].name != "session-start" {
+		t.Errorf("first event = %q, want session-start", l.events[0].name)
 	}
 	last := l.events[len(l.events)-1]
-	if last.name != "daemon_stop" {
-		t.Errorf("last event = %q, want daemon_stop", last.name)
+	if last.name != "session-end" {
+		t.Errorf("last event = %q, want session-end", last.name)
 	}
 }
 
@@ -588,8 +588,8 @@ func TestRunDaemon_ContextCancelDuringSleep(t *testing.T) {
 
 	// daemon_stop must be the last event.
 	last := sleepLogger.inner.events[len(sleepLogger.inner.events)-1]
-	if last.name != "daemon_stop" {
-		t.Errorf("last event = %q, want daemon_stop", last.name)
+	if last.name != "session-end" {
+		t.Errorf("last event = %q, want session-end", last.name)
 	}
 }
 
@@ -625,6 +625,158 @@ func hasField(fields []Field, key, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestRunOnce_BeadsCheckEvent(t *testing.T) {
+	h := &fakeHarness{}
+	b := &fakeBeads{issues: []beads.Issue{{ID: "TST-1", Title: "Fix bug"}, {ID: "TST-2", Title: "Add feature"}}}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		BeadsEnabled: true,
+		Prompt:       "do work",
+	}
+
+	_, err := RunOnce(context.Background(), cfg, h, b, l)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have a beads-check event with count after iteration-start
+	var found bool
+	for _, e := range l.events {
+		if e.name == "beads-check" {
+			found = true
+			if !hasField(e.fields, "count", "2") {
+				t.Errorf("beads-check event missing count=2, got %v", e.fields)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected beads-check event to be logged")
+	}
+}
+
+func TestRunOnce_BeadsCheckEventNoWork(t *testing.T) {
+	h := &fakeHarness{}
+	b := &fakeBeads{err: beads.ErrNoWork}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		BeadsEnabled: true,
+		Prompt:       "",
+	}
+
+	RunOnce(context.Background(), cfg, h, b, l)
+
+	var found bool
+	for _, e := range l.events {
+		if e.name == "beads-check" {
+			found = true
+			if !hasField(e.fields, "count", "0") {
+				t.Errorf("beads-check event missing count=0, got %v", e.fields)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected beads-check event even when no work")
+	}
+}
+
+func TestRunDaemon_ErrorEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Harness fails on first call, then cancel.
+	h := &multiHarness{
+		exitCodes: []int{1},
+		errs:      []error{errors.New("exit 1")},
+	}
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{{ID: "T-1", Title: "Fix"}}},
+	}}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: time.Millisecond,
+		BeadsEnabled:  true,
+		Prompt:        "do it",
+		Harness:       "claude",
+	}
+
+	// Cancel after first iteration-end so daemon exits.
+	countingLogger := &callbackLogger{
+		inner: l,
+		onEvent: func(name string) {
+			if name == "iteration-end" {
+				cancel()
+			}
+		},
+	}
+
+	err := RunDaemon(ctx, cfg, h, b, countingLogger)
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+
+	var found bool
+	for _, e := range l.events {
+		if e.name == "error" {
+			found = true
+			hasMsg := false
+			for _, f := range e.fields {
+				if f.Key == "message" && f.Value != "" {
+					hasMsg = true
+				}
+			}
+			if !hasMsg {
+				t.Errorf("error event missing message field, got %v", e.fields)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected error event when RunOnce fails in daemon mode")
+	}
+}
+
+func TestRunMaxIter_ErrorEvent(t *testing.T) {
+	h := &multiHarness{
+		exitCodes: []int{1, 0},
+		errs:      []error{errors.New("exit 1"), nil},
+	}
+	issue := beads.Issue{ID: "T-1", Title: "Fix"}
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{issue}},
+		{issues: []beads.Issue{issue}},
+	}}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.MaxIterationsMode,
+		MaxIterations: 2,
+		BeadsEnabled:  true,
+		Prompt:        "do it",
+	}
+
+	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var found bool
+	for _, e := range l.events {
+		if e.name == "error" {
+			found = true
+			hasMsg := false
+			for _, f := range e.fields {
+				if f.Key == "message" && f.Value != "" {
+					hasMsg = true
+				}
+			}
+			if !hasMsg {
+				t.Errorf("error event missing message field, got %v", e.fields)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected error event when iteration fails in max-iter mode")
+	}
 }
 
 func TestRunOnce_InstructionPassedToPrompt(t *testing.T) {

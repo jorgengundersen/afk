@@ -6,12 +6,12 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/jorgengundersen/afk/beads"
-	"github.com/jorgengundersen/afk/cli"
-	"github.com/jorgengundersen/afk/config"
-	"github.com/jorgengundersen/afk/eventlog"
-	"github.com/jorgengundersen/afk/harness"
-	"github.com/jorgengundersen/afk/loop"
+	"github.com/jorgengundersen/afk/internal/beads"
+	"github.com/jorgengundersen/afk/internal/cli"
+	"github.com/jorgengundersen/afk/internal/config"
+	"github.com/jorgengundersen/afk/internal/eventlog"
+	"github.com/jorgengundersen/afk/internal/harness"
+	"github.com/jorgengundersen/afk/internal/loop"
 )
 
 func main() {
@@ -24,8 +24,6 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "afk: %v\n", err)
 		return 2
 	}
-
-	ctx := cli.SetupSignals(syscall.SIGINT, syscall.SIGTERM)
 
 	if cfg.Workdir != "" {
 		if err := os.Chdir(cfg.Workdir); err != nil {
@@ -50,6 +48,12 @@ func run(args []string) int {
 	if logCloser != nil {
 		defer logCloser()
 	}
+
+	ctx := cli.SetupSignals([]os.Signal{syscall.SIGINT, syscall.SIGTERM},
+		cli.WithOnSignal(func(sig string) {
+			log.Event("signal-received", loop.Field{Key: "signal", Value: sig})
+		}),
+	)
 
 	h, err := harness.New(cfg)
 	if err != nil {
