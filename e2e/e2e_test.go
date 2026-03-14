@@ -180,6 +180,75 @@ func TestLogFormat_MatchesKeyValueSpec(t *testing.T) {
 	}
 }
 
+// fakeBeadsEnv creates a temp dir with both a "claude" script that captures
+// its args to a file and a "bd" script that returns a JSON issue list.
+// Returns the dir and the capture file path.
+func fakeBeadsEnv(t *testing.T) (dir, captureFile string) {
+	t.Helper()
+	dir = t.TempDir()
+	captureFile = filepath.Join(dir, "captured")
+
+	claude := filepath.Join(dir, "claude")
+	claudeContent := "#!/bin/sh\necho \"$@\" > " + captureFile + "\nexit 0\n"
+	if err := os.WriteFile(claude, []byte(claudeContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	bd := filepath.Join(dir, "bd")
+	bdContent := "#!/bin/sh\n" +
+		"echo '[{\"id\":\"E2E-1\",\"title\":\"Test issue\",\"description\":\"e2e desc\",\"acceptance_criteria\":\"e2e ac\"}]'\n"
+	if err := os.WriteFile(bd, []byte(bdContent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	return dir, captureFile
+}
+
+func TestBeadsInstruction_CustomInPrompt(t *testing.T) {
+	dir, captureFile := fakeBeadsEnv(t)
+
+	cmd := exec.Command(afkBin, "-n", "1", "--beads", "--beads-instruction", "Work carefully and test everything")
+	cmd.Env = append(os.Environ(), "PATH="+dir)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("unexpected error: %v\noutput: %s", err, out)
+	}
+
+	captured, err := os.ReadFile(captureFile)
+	if err != nil {
+		t.Fatalf("failed to read captured args: %v", err)
+	}
+
+	if !strings.Contains(string(captured), "Work carefully and test everything") {
+		t.Errorf("expected custom instruction in prompt passed to harness, got:\n%s", captured)
+	}
+	if !strings.Contains(string(captured), "E2E-1") {
+		t.Errorf("expected issue ID in prompt, got:\n%s", captured)
+	}
+}
+
+func TestBeadsInstruction_DefaultInPrompt(t *testing.T) {
+	dir, captureFile := fakeBeadsEnv(t)
+
+	cmd := exec.Command(afkBin, "-n", "1", "--beads")
+	cmd.Env = append(os.Environ(), "PATH="+dir)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("unexpected error: %v\noutput: %s", err, out)
+	}
+
+	captured, err := os.ReadFile(captureFile)
+	if err != nil {
+		t.Fatalf("failed to read captured args: %v", err)
+	}
+
+	if !strings.Contains(string(captured), "Claim this issue and complete it") {
+		t.Errorf("expected default instruction in prompt, got:\n%s", captured)
+	}
+}
+
 func TestDaemon_StopsOnSIGINT(t *testing.T) {
 	dir := fakeClaude(t, 0)
 	cmd := exec.Command(afkBin, "-d", "-prompt", "hello")
