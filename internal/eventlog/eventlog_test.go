@@ -43,6 +43,23 @@ func TestNew_creates_log_file(t *testing.T) {
 	}
 }
 
+func TestNew_creates_missing_directory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "logs")
+	l, err := eventlog.New(dir, false)
+	if err != nil {
+		t.Fatalf("New() should create missing dir, got error: %v", err)
+	}
+	defer l.Close()
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("log dir was not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("log dir path is not a directory")
+	}
+}
+
 func TestNew_returns_error_for_bad_dir(t *testing.T) {
 	_, err := eventlog.New("/no/such/dir", false)
 	if err == nil {

@@ -34,6 +34,16 @@ func TestParseAndValidate_Defaults(t *testing.T) {
 	if cfg.Verbose {
 		t.Error("Verbose should be false by default")
 	}
+
+	// LogDir should default to ~/.local/share/afk/logs/
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("cannot get home dir: %v", err)
+	}
+	wantLogDir := home + "/.local/share/afk/logs"
+	if cfg.LogDir != wantLogDir {
+		t.Errorf("LogDir = %q, want %q", cfg.LogDir, wantLogDir)
+	}
 }
 
 func TestParseAndValidate_AllFlags(t *testing.T) {
@@ -102,6 +112,16 @@ func TestParseAndValidate_AllFlags(t *testing.T) {
 	}
 	if len(cfg.PassthroughArgs) != 2 || cfg.PassthroughArgs[0] != "extra1" || cfg.PassthroughArgs[1] != "extra2" {
 		t.Errorf("PassthroughArgs = %v, want [extra1 extra2]", cfg.PassthroughArgs)
+	}
+}
+
+func TestParseAndValidate_LogDirExplicitOverridesDefault(t *testing.T) {
+	cfg, err := cli.ParseAndValidate([]string{"-log", "/custom/logs", "-prompt", "go"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogDir != "/custom/logs" {
+		t.Errorf("LogDir = %q, want %q", cfg.LogDir, "/custom/logs")
 	}
 }
 

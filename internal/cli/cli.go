@@ -91,6 +91,13 @@ func ParseAndValidate(args []string, opts ...Option) (config.Config, error) {
 		cfg.BeadsLabels = splitLabels(*beadsLabels)
 	}
 
+	// Default log directory when not specified
+	if cfg.LogDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			cfg.LogDir = home + "/.local/share/afk/logs"
+		}
+	}
+
 	// Read prompt from stdin when -prompt is empty
 	if cfg.Prompt == "" {
 		prompt, err := readStdin(o.stdin)

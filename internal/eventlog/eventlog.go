@@ -24,6 +24,9 @@ type Field struct {
 
 // New creates a Logger that writes to a new log file in logDir.
 func New(logDir string, stderr bool) (*Logger, error) {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
+	}
 	name := fmt.Sprintf("afk-%s.log", time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(logDir, name)
 	f, err := os.Create(path)

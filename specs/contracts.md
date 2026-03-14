@@ -216,7 +216,7 @@ func F(key, value string) Field
 ```
 
 Contract:
-- `New` creates log file in logDir. Returns error if dir not writable.
+- `New` creates logDir (via MkdirAll) then creates log file. Returns error if dir cannot be created or is not writable.
 - `Event` writes one structured log line. Never returns error (logs write failure to stderr as last resort).
 - `Close` flushes and closes the log file.
 - `F` is a convenience constructor for Field.

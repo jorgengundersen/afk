@@ -93,7 +93,7 @@ Default instruction text:
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--log-dir` | path | `~/.local/share/afk/logs/` for Mac/Linux, (what is considered standard for Windows | Directory for session log files |
+| `--log` | path | `~/.local/share/afk/logs/` | Directory for session log files |
 | `--stderr` | bool | `false` | Mirror log output to stderr (in addition to log file) |
 | `-v`, `--verbose` | bool | `false` | Increased verbosity (agent output, full issue JSON) |
 | `-q`, `--quiet` | bool | `false` | Suppress all terminal output except errors |
