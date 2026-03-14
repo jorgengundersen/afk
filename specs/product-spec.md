@@ -229,8 +229,8 @@ afk: done (2 iterations, no work remaining)
 | Code | Meaning |
 |---|---|
 | 0 | Clean exit (max reached, no work, or signal shutdown) |
-| 1 | Startup error (invalid flags, missing binary) |
-| 2 | All iterations failed (every agent returned non-zero) |
+| 1 | Runtime error (missing binary, all iterations failed) |
+| 2 | CLI usage error (invalid flags, bad arguments) |
 
 ---
 

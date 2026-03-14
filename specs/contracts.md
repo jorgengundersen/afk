@@ -61,8 +61,8 @@ Returns a context that is cancelled on first SIGINT/SIGTERM. Second SIGINT trigg
 ```go
 const (
     ExitClean        = 0
-    ExitStartupError = 1
-    ExitAllFailed    = 2
+    ExitRuntimeError = 1
+    ExitUsageError   = 2
 )
 ```
 
@@ -184,7 +184,7 @@ Contract:
 - Returns nil on clean completion (max reached, no work, signal shutdown).
 - Returns error only for unrecoverable failures.
 - Per-iteration agent failures are logged, not returned.
-- Returns a distinguishable error when all iterations failed (for exit code 2).
+- Returns `ErrAllFailed` when every iteration failed (mapped to exit code 1 in main).
 - Respects context cancellation for signal handling.
 
 ### Sentinel Errors

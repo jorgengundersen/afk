@@ -8,17 +8,17 @@ import (
 	"testing"
 )
 
-func TestRun_NoArgs_ExitCode2(t *testing.T) {
+func TestRun_NoArgs_ExitUsageError(t *testing.T) {
 	code := run(nil)
 	if code != 2 {
-		t.Fatalf("expected exit code 2, got %d", code)
+		t.Fatalf("expected exit code 2 (usage error), got %d", code)
 	}
 }
 
-func TestRun_Help_ExitCode2(t *testing.T) {
+func TestRun_Help_ExitUsageError(t *testing.T) {
 	code := run([]string{"-help"})
 	if code != 2 {
-		t.Fatalf("expected exit code 2, got %d", code)
+		t.Fatalf("expected exit code 2 (usage error), got %d", code)
 	}
 }
 
@@ -35,12 +35,12 @@ func TestBuild_HelpPrintsUsage(t *testing.T) {
 	}
 }
 
-func TestRun_HarnessNotFound_ExitCode1(t *testing.T) {
-	// claude binary not in PATH → harness.New fails → exit 1
+func TestRun_HarnessNotFound_ExitRuntimeError(t *testing.T) {
+	// claude binary not in PATH → harness.New fails → exit 1 (runtime error)
 	t.Setenv("PATH", t.TempDir())
 	code := run([]string{"-prompt", "hello"})
 	if code != 1 {
-		t.Fatalf("expected exit code 1, got %d", code)
+		t.Fatalf("expected exit code 1 (runtime error), got %d", code)
 	}
 }
 

@@ -9,7 +9,7 @@ One strategy, applied consistently everywhere. Errors are values, not exceptions
 Errors are created at the point closest to the failure:
 
 ```go
-// In beads/beads.go
+// In internal/beads/beads.go
 if err := json.Unmarshal(data, &issues); err != nil {
     return nil, fmt.Errorf("parsing bd ready output: %w", err)
 }
@@ -22,7 +22,7 @@ Use `fmt.Errorf` with `%w` to wrap. The message describes what this function was
 Most code propagates errors upward with added context:
 
 ```go
-// In loop/maxiter.go
+// In internal/loop/maxiter.go
 issues, err := b.Ready(ctx)
 if err != nil {
     return fmt.Errorf("checking beads: %w", err)
@@ -42,8 +42,8 @@ Each layer adds one clause of context. The full chain reads as a sentence:
 
 Errors are **handled** (logged, converted to exit code, presented to user) at exactly these boundaries:
 
-1. **`cmd/afk/main.go`** — top-level. Catches errors from `cli/` and `loop/`, logs them, sets exit code.
-2. **`loop/` orchestrator** — catches per-iteration errors from harness/beads. Logs them. Decides whether to continue or stop.
+1. **`cmd/afk/main.go`** — top-level. Catches errors from `internal/cli/` and `internal/loop/`, logs them, sets exit code.
+2. **`internal/loop/` orchestrator** — catches per-iteration errors from harness/beads. Logs them. Decides whether to continue or stop.
 
 Everything else propagates.
 
@@ -62,7 +62,7 @@ main() → handle: log, exit code
 Define sentinel errors for conditions that callers need to distinguish:
 
 ```go
-// In beads/beads.go
+// In internal/beads/beads.go
 var (
     ErrNoWork     = errors.New("no work available")
     ErrBdNotFound = errors.New("bd not found in PATH")
@@ -100,7 +100,7 @@ Check with `errors.As`:
 var ve *cli.ValidationError
 if errors.As(err, &ve) {
     fmt.Fprintln(os.Stderr, ve.Error())
-    os.Exit(cli.ExitStartupError)
+    os.Exit(cli.ExitUsageError)
 }
 ```
 
@@ -141,7 +141,7 @@ No stack traces in user-facing output. No Go-style `harness: codex: exec: not fo
 | Code | Constant | Meaning |
 |------|----------|---------|
 | 0 | `cli.ExitClean` | Normal completion |
-| 1 | `cli.ExitStartupError` | Invalid flags, missing binary, bad config |
-| 2 | `cli.ExitAllFailed` | Every iteration's agent returned non-zero |
+| 1 | `cli.ExitRuntimeError` | Runtime error: missing binary, bad config, all iterations failed |
+| 2 | `cli.ExitUsageError` | CLI usage error: invalid flags, bad arguments |
 
 Exit code is determined in `cmd/afk/main.go` based on the error (or lack thereof) returned from `loop.Run()`.
