@@ -51,10 +51,10 @@ func ParseAndValidate(args []string, stdin io.Reader) (config.Config, error)
 Parses CLI flags from args, reads stdin if needed, validates mutual exclusions and required inputs. Returns immutable config or error. This is the only place `flag` package is used.
 
 ```go
-func SetupSignals(ctx context.Context) (context.Context, context.CancelFunc)
+func SetupSignals(signals []os.Signal, opts ...SignalOption) (context.Context, context.CancelFunc)
 ```
 
-Returns a context that is cancelled on first SIGINT/SIGTERM. Second SIGINT triggers `os.Exit(1)`. The returned CancelFunc is for cleanup.
+Returns a context that is cancelled when any of the given signals are received. The returned CancelFunc is for cleanup.
 
 ### Exit Code Constants
 

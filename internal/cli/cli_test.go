@@ -190,7 +190,8 @@ func TestParseAndValidate_FlagPromptOverridesStdin(t *testing.T) {
 }
 
 func TestSetupSignals(t *testing.T) {
-	ctx := cli.SetupSignals([]os.Signal{syscall.SIGUSR1})
+	ctx, cancel := cli.SetupSignals([]os.Signal{syscall.SIGUSR1})
+	defer cancel()
 
 	select {
 	case <-ctx.Done():
@@ -209,11 +210,32 @@ func TestSetupSignals(t *testing.T) {
 	}
 }
 
+func TestSetupSignals_CancelFunc(t *testing.T) {
+	ctx, cancel := cli.SetupSignals([]os.Signal{syscall.SIGUSR1})
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("context should not be cancelled yet")
+	default:
+	}
+
+	// Cancel without a signal — the returned CancelFunc should work.
+	cancel()
+
+	select {
+	case <-ctx.Done():
+		// success
+	case <-time.After(time.Second):
+		t.Fatal("context was not cancelled after cancel()")
+	}
+}
+
 func TestSetupSignals_OnSignalCallback(t *testing.T) {
 	var received string
-	ctx := cli.SetupSignals([]os.Signal{syscall.SIGUSR1}, cli.WithOnSignal(func(sig string) {
+	ctx, cancel := cli.SetupSignals([]os.Signal{syscall.SIGUSR1}, cli.WithOnSignal(func(sig string) {
 		received = sig
 	}))
+	defer cancel()
 
 	syscall.Kill(syscall.Getpid(), syscall.SIGUSR1)
 

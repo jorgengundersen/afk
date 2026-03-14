@@ -49,11 +49,12 @@ func run(args []string) int {
 		defer logCloser()
 	}
 
-	ctx := cli.SetupSignals([]os.Signal{syscall.SIGINT, syscall.SIGTERM},
+	ctx, cancel := cli.SetupSignals([]os.Signal{syscall.SIGINT, syscall.SIGTERM},
 		cli.WithOnSignal(func(sig string) {
 			log.Event("signal-received", loop.Field{Key: "signal", Value: sig})
 		}),
 	)
+	defer cancel()
 
 	h, err := harness.New(cfg)
 	if err != nil {

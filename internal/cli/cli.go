@@ -146,8 +146,8 @@ func WithOnSignal(fn func(string)) SignalOption {
 }
 
 // SetupSignals returns a context that is cancelled when any of the given
-// signals are received.
-func SetupSignals(signals []os.Signal, opts ...SignalOption) context.Context {
+// signals are received, along with a CancelFunc for cleanup.
+func SetupSignals(signals []os.Signal, opts ...SignalOption) (context.Context, context.CancelFunc) {
 	o := &signalOptions{}
 	for _, fn := range opts {
 		fn(o)
@@ -163,7 +163,7 @@ func SetupSignals(signals []os.Signal, opts ...SignalOption) context.Context {
 		}
 		cancel()
 	}()
-	return ctx
+	return ctx, cancel
 }
 
 func splitLabels(s string) []string {
