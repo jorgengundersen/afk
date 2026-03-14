@@ -8,7 +8,6 @@ import (
 
 	"github.com/jorgengundersen/afk/internal/beads"
 	"github.com/jorgengundersen/afk/internal/cli"
-	"github.com/jorgengundersen/afk/internal/config"
 	"github.com/jorgengundersen/afk/internal/eventlog"
 	"github.com/jorgengundersen/afk/internal/harness"
 	"github.com/jorgengundersen/afk/internal/loop"
@@ -69,12 +68,7 @@ func run(args []string) int {
 
 	pr := terminal.New(os.Stdout, cfg.Quiet, cfg.Verbose)
 
-	switch cfg.Mode {
-	case config.DaemonMode:
-		err = loop.RunDaemon(ctx, cfg, h, bc, log, pr)
-	default:
-		err = loop.RunMaxIter(ctx, cfg, h, bc, log, pr)
-	}
+	err = loop.Run(ctx, cfg, h, bc, log, pr)
 
 	if err != nil {
 		if errors.Is(err, loop.ErrAllFailed) {

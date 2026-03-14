@@ -111,7 +111,7 @@ func TestRunOnce_HappyPath(t *testing.T) {
 		Prompt:       "do the work",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestRunOnce_NoWork(t *testing.T) {
 		Prompt:       "",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestRunOnce_HarnessFailure(t *testing.T) {
 		Prompt:       "do it",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l)
 	if err == nil {
 		t.Fatal("expected error from harness failure")
 	}
@@ -202,7 +202,7 @@ func TestRunOnce_ContextCancel(t *testing.T) {
 		Prompt:       "do it",
 	}
 
-	_, err := RunOnce(ctx, cfg, h, b, l)
+	_, err := doOnce(ctx, cfg, h, b, l)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestRunOnce_BeadsDisabled(t *testing.T) {
 		Prompt:       "just do the prompt",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, nil, l)
+	ran, err := doOnce(context.Background(), cfg, h, nil, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,6 +267,52 @@ func (m *multiBeads) Ready(_ context.Context) ([]beads.Issue, error) {
 		return m.results[i].issues, m.results[i].err
 	}
 	return nil, beads.ErrNoWork
+}
+
+func TestRun_MaxIterationsMode(t *testing.T) {
+	h := &multiHarness{exitCodes: []int{0}, errs: []error{nil}}
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{{ID: "T-1", Title: "Fix"}}, err: nil},
+	}}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.MaxIterationsMode,
+		MaxIterations: 1,
+		BeadsEnabled:  true,
+		Prompt:        "do it",
+		Harness:       "claude",
+	}
+
+	err := Run(context.Background(), cfg, h, b, l, nopPrinter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h.calls != 1 {
+		t.Fatalf("expected 1 harness call, got %d", h.calls)
+	}
+}
+
+func TestRun_DaemonMode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately so daemon exits.
+
+	l := &fakeLogger{}
+	h := &fakeHarness{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: time.Millisecond,
+		Prompt:        "do it",
+		Harness:       "claude",
+	}
+
+	err := Run(ctx, cfg, h, nil, l, nopPrinter{})
+	if err != nil {
+		t.Fatalf("expected nil on clean shutdown, got: %v", err)
+	}
+
+	if l.events[0].name != "session-start" {
+		t.Errorf("first event = %q, want session-start", l.events[0].name)
+	}
 }
 
 func TestRunMaxIter_SingleSuccess(t *testing.T) {
@@ -688,7 +734,7 @@ func TestRunOnce_BeadsCheckEvent(t *testing.T) {
 		Prompt:       "do work",
 	}
 
-	_, err := RunOnce(context.Background(), cfg, h, b, l)
+	_, err := doOnce(context.Background(), cfg, h, b, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -717,7 +763,7 @@ func TestRunOnce_BeadsCheckEventNoWork(t *testing.T) {
 		Prompt:       "",
 	}
 
-	RunOnce(context.Background(), cfg, h, b, l)
+	doOnce(context.Background(), cfg, h, b, l)
 
 	var found bool
 	for _, e := range l.events {
@@ -841,7 +887,7 @@ func TestRunOnce_InstructionPassedToPrompt(t *testing.T) {
 		Prompt:        "do work",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -863,7 +909,7 @@ func TestRunOnce_DefaultInstructionWhenEmpty(t *testing.T) {
 		Prompt:        "",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -884,7 +930,7 @@ func TestRunOnce_NoInstructionWithoutIssue(t *testing.T) {
 		Prompt:        "just a prompt",
 	}
 
-	ran, err := RunOnce(context.Background(), cfg, h, nil, l)
+	ran, err := doOnce(context.Background(), cfg, h, nil, l)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

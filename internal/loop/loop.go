@@ -18,7 +18,7 @@ type Field struct {
 	Value string
 }
 
-// EventLogger is the logging interface used by RunOnce.
+// EventLogger is the logging interface used by the loop.
 type EventLogger interface {
 	Event(name string, fields ...Field)
 }
@@ -51,9 +51,9 @@ type iterResult struct {
 	err        error
 }
 
-// RunOnce executes one iteration of the loop: claim an issue, assemble a
+// doOnce executes one iteration of the loop: claim an issue, assemble a
 // prompt, run the harness, and log the result.
-func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) (bool, error) {
+func doOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) (bool, error) {
 	r := runOnce(ctx, cfg, h, bc, log)
 	return r.ran, r.err
 }
@@ -113,9 +113,20 @@ func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 	return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle}
 }
 
-// RunDaemon runs RunOnce in a loop indefinitely until the context is cancelled.
-// When RunOnce returns no work, it sleeps for cfg.SleepInterval before re-checking.
-// When RunOnce returns work done, it immediately checks for the next issue.
+// Run is the main entry point for the loop package. It dispatches to
+// RunMaxIter or RunDaemon based on cfg.Mode.
+func Run(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
+	switch cfg.Mode {
+	case config.DaemonMode:
+		return RunDaemon(ctx, cfg, h, bc, log, pr)
+	default:
+		return RunMaxIter(ctx, cfg, h, bc, log, pr)
+	}
+}
+
+// RunDaemon runs the loop indefinitely until the context is cancelled.
+// When no work is found, it sleeps for cfg.SleepInterval before re-checking.
+// When work is done, it immediately checks for the next issue.
 func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
 	log.Event("session-start")
 	pr.Starting("daemon", 0, cfg.Harness, cfg.BeadsEnabled)
@@ -161,8 +172,8 @@ func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient
 // ErrAllFailed is returned when every iteration's harness returned non-zero.
 var ErrAllFailed = errors.New("all iterations failed")
 
-// RunMaxIter runs RunOnce up to cfg.MaxIterations times.
-// Stops early if RunOnce returns no work or context is cancelled.
+// RunMaxIter runs the loop up to cfg.MaxIterations times.
+// Stops early if no work is available or context is cancelled.
 // Returns ErrAllFailed if every iteration failed.
 func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
 	log.Event("session-start")

@@ -38,7 +38,7 @@ const (
 func (c Config) Validate() error
 ```
 
-Pure method. Returns nil or a descriptive error for every fail-fast condition in the product spec. Does not touch the file system or PATH — binary existence checks happen in `cli/` at wire-up time.
+Pure method. Returns nil or a descriptive error for every fail-fast condition in the product spec. Does not touch the file system or PATH — binary existence checks happen in `internal/cli/` at wire-up time.
 
 ## `cli`
 
@@ -66,7 +66,7 @@ const (
 )
 ```
 
-Exit codes live in `cli/` because they are a CLI concern — they only matter at the boundary between the program and the shell.
+Exit codes live in `internal/cli/` because they are a CLI concern — they only matter at the boundary between the program and the shell.
 
 ## `harness`
 
@@ -148,14 +148,39 @@ var (
 
 ## `loop`
 
+### Interfaces
+
+```go
+type EventLogger interface {
+    Event(name string, fields ...Field)
+}
+
+type BeadsClient interface {
+    Ready(ctx context.Context) ([]beads.Issue, error)
+}
+
+type Harness interface {
+    Run(ctx context.Context, prompt string) (exitCode int, err error)
+}
+
+type Printer interface {
+    Starting(mode string, maxIter int, harness string, beads bool)
+    Iteration(n, maxIter int, issueID, title string)
+    Sleeping(d time.Duration)
+    Waking()
+    Done(total, succeeded, failed int, reason string)
+    VerboseDetail(msg string)
+}
+```
+
 ### Functions
 
 ```go
-func Run(ctx context.Context, cfg config.Config, h harness.Harness, b *beads.Client, l *eventlog.Logger) error
+func Run(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error
 ```
 
 Contract:
-- Runs the main loop in the configured mode (max-iterations or daemon).
+- Dispatches to max-iterations or daemon mode based on `cfg.Mode`.
 - Returns nil on clean completion (max reached, no work, signal shutdown).
 - Returns error only for unrecoverable failures.
 - Per-iteration agent failures are logged, not returned.
