@@ -12,6 +12,7 @@ import (
 	"github.com/jorgengundersen/afk/internal/eventlog"
 	"github.com/jorgengundersen/afk/internal/harness"
 	"github.com/jorgengundersen/afk/internal/loop"
+	"github.com/jorgengundersen/afk/internal/terminal"
 )
 
 func main() {
@@ -66,11 +67,13 @@ func run(args []string) int {
 		bc = beads.NewClient(cfg.BeadsLabels)
 	}
 
+	pr := terminal.New(os.Stdout, cfg.Quiet, cfg.Verbose)
+
 	switch cfg.Mode {
 	case config.DaemonMode:
-		err = loop.RunDaemon(ctx, cfg, h, bc, log)
+		err = loop.RunDaemon(ctx, cfg, h, bc, log, pr)
 	default:
-		err = loop.RunMaxIter(ctx, cfg, h, bc, log)
+		err = loop.RunMaxIter(ctx, cfg, h, bc, log, pr)
 	}
 
 	if err != nil {

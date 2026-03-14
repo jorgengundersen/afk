@@ -50,6 +50,58 @@ func (f *fakeLogger) Event(name string, fields ...Field) {
 	f.events = append(f.events, loggedEvent{name: name, fields: fields})
 }
 
+// nopPrinter discards all terminal output.
+type nopPrinter struct{}
+
+func (nopPrinter) Starting(string, int, string, bool) {}
+func (nopPrinter) Iteration(int, int, string, string) {}
+func (nopPrinter) Sleeping(time.Duration)             {}
+func (nopPrinter) Waking()                            {}
+func (nopPrinter) Done(int, int, int, string)         {}
+func (nopPrinter) VerboseDetail(string)               {}
+
+// fakePrinter records printer calls.
+type fakePrinter struct {
+	startCalls   []startCall
+	iterCalls    []iterCall
+	sleepCalls   int
+	wakeCalls    int
+	doneCalls    []doneCall
+	verboseCalls []string
+}
+
+type startCall struct {
+	mode    string
+	maxIter int
+	harness string
+	beads   bool
+}
+
+type iterCall struct {
+	n, maxIter     int
+	issueID, title string
+}
+
+type doneCall struct {
+	total, succeeded, failed int
+	reason                   string
+}
+
+func (f *fakePrinter) Starting(mode string, maxIter int, harness string, beads bool) {
+	f.startCalls = append(f.startCalls, startCall{mode, maxIter, harness, beads})
+}
+func (f *fakePrinter) Iteration(n, maxIter int, issueID, title string) {
+	f.iterCalls = append(f.iterCalls, iterCall{n, maxIter, issueID, title})
+}
+func (f *fakePrinter) Sleeping(time.Duration) { f.sleepCalls++ }
+func (f *fakePrinter) Waking()                { f.wakeCalls++ }
+func (f *fakePrinter) Done(total, succeeded, failed int, reason string) {
+	f.doneCalls = append(f.doneCalls, doneCall{total, succeeded, failed, reason})
+}
+func (f *fakePrinter) VerboseDetail(msg string) {
+	f.verboseCalls = append(f.verboseCalls, msg)
+}
+
 func TestRunOnce_HappyPath(t *testing.T) {
 	h := &fakeHarness{}
 	b := &fakeBeads{issues: []beads.Issue{{ID: "TST-1", Title: "Fix bug"}}}
@@ -230,7 +282,7 @@ func TestRunMaxIter_SingleSuccess(t *testing.T) {
 		Prompt:        "do it",
 	}
 
-	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	err := RunMaxIter(context.Background(), cfg, h, b, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -278,7 +330,7 @@ func TestRunMaxIter_ContextCancel(t *testing.T) {
 		Prompt:        "do it",
 	}
 
-	err := RunMaxIter(ctx, cfg, cancelHarness, b, l)
+	err := RunMaxIter(ctx, cfg, cancelHarness, b, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("expected nil on context cancel, got: %v", err)
 	}
@@ -324,7 +376,7 @@ func TestRunMaxIter_AllFailed(t *testing.T) {
 		Prompt:        "do it",
 	}
 
-	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	err := RunMaxIter(context.Background(), cfg, h, b, l, nopPrinter{})
 	if !errors.Is(err, ErrAllFailed) {
 		t.Fatalf("expected ErrAllFailed, got: %v", err)
 	}
@@ -355,7 +407,7 @@ func TestRunMaxIter_EarlyStopNoWork(t *testing.T) {
 		Prompt:        "",
 	}
 
-	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	err := RunMaxIter(context.Background(), cfg, h, b, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -388,7 +440,7 @@ func TestRunMaxIter_NIterations(t *testing.T) {
 		Prompt:        "do it",
 	}
 
-	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	err := RunMaxIter(context.Background(), cfg, h, b, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -420,7 +472,7 @@ func TestRunDaemon_CleanShutdown(t *testing.T) {
 		Harness:       "claude",
 	}
 
-	err := RunDaemon(ctx, cfg, h, nil, l)
+	err := RunDaemon(ctx, cfg, h, nil, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("expected nil on clean shutdown, got: %v", err)
 	}
@@ -470,7 +522,7 @@ func TestRunDaemon_SleepWakeCycle(t *testing.T) {
 		},
 	}
 
-	err := RunDaemon(ctx, cfg, h, b, countingLogger)
+	err := RunDaemon(ctx, cfg, h, b, countingLogger, nopPrinter{})
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
@@ -524,7 +576,7 @@ func TestRunDaemon_ImmediateRecheckAfterWork(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := RunDaemon(ctx, cfg, cancelAfterTwo, b, l)
+	err := RunDaemon(ctx, cfg, cancelAfterTwo, b, l, nopPrinter{})
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -575,7 +627,7 @@ func TestRunDaemon_ContextCancelDuringSleep(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := RunDaemon(ctx, cfg, h, b, sleepLogger)
+	err := RunDaemon(ctx, cfg, h, b, sleepLogger, nopPrinter{})
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -711,7 +763,7 @@ func TestRunDaemon_ErrorEvent(t *testing.T) {
 		},
 	}
 
-	err := RunDaemon(ctx, cfg, h, b, countingLogger)
+	err := RunDaemon(ctx, cfg, h, b, countingLogger, nopPrinter{})
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
@@ -754,7 +806,7 @@ func TestRunMaxIter_ErrorEvent(t *testing.T) {
 		Prompt:        "do it",
 	}
 
-	err := RunMaxIter(context.Background(), cfg, h, b, l)
+	err := RunMaxIter(context.Background(), cfg, h, b, l, nopPrinter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -841,5 +893,122 @@ func TestRunOnce_NoInstructionWithoutIssue(t *testing.T) {
 	}
 	if strings.Contains(h.prompt, "should not appear") {
 		t.Errorf("instruction should not appear without issue, got:\n%s", h.prompt)
+	}
+}
+
+func TestRunMaxIter_PrinterCalls(t *testing.T) {
+	h := &multiHarness{exitCodes: []int{0, 0}, errs: []error{nil, nil}}
+	issue := beads.Issue{ID: "T-1", Title: "Fix"}
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{issue}},
+		{issues: []beads.Issue{issue}},
+		{err: beads.ErrNoWork},
+	}}
+	l := &fakeLogger{}
+	pr := &fakePrinter{}
+	cfg := config.Config{
+		Mode:          config.MaxIterationsMode,
+		MaxIterations: 5,
+		Harness:       "claude",
+		BeadsEnabled:  true,
+		Prompt:        "",
+	}
+
+	err := RunMaxIter(context.Background(), cfg, h, b, l, pr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Starting called once with correct params
+	if len(pr.startCalls) != 1 {
+		t.Fatalf("expected 1 Starting call, got %d", len(pr.startCalls))
+	}
+	if pr.startCalls[0].mode != "max-iterations" {
+		t.Errorf("mode = %q, want max-iterations", pr.startCalls[0].mode)
+	}
+	if pr.startCalls[0].maxIter != 5 {
+		t.Errorf("maxIter = %d, want 5", pr.startCalls[0].maxIter)
+	}
+	if pr.startCalls[0].harness != "claude" {
+		t.Errorf("harness = %q, want claude", pr.startCalls[0].harness)
+	}
+
+	// Iteration called twice with issue info
+	if len(pr.iterCalls) != 2 {
+		t.Fatalf("expected 2 Iteration calls, got %d", len(pr.iterCalls))
+	}
+	if pr.iterCalls[0].n != 1 || pr.iterCalls[0].maxIter != 5 {
+		t.Errorf("iter[0] = %d/%d, want 1/5", pr.iterCalls[0].n, pr.iterCalls[0].maxIter)
+	}
+	if pr.iterCalls[0].issueID != "T-1" {
+		t.Errorf("iter[0] issueID = %q, want T-1", pr.iterCalls[0].issueID)
+	}
+
+	// Done called once
+	if len(pr.doneCalls) != 1 {
+		t.Fatalf("expected 1 Done call, got %d", len(pr.doneCalls))
+	}
+	if pr.doneCalls[0].total != 2 || pr.doneCalls[0].succeeded != 2 {
+		t.Errorf("done = total=%d succeeded=%d, want 2/2", pr.doneCalls[0].total, pr.doneCalls[0].succeeded)
+	}
+	if pr.doneCalls[0].reason != "no work remaining" {
+		t.Errorf("reason = %q, want 'no work remaining'", pr.doneCalls[0].reason)
+	}
+}
+
+func TestRunDaemon_PrinterCalls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	b := &multiBeads{results: []beadsResult{
+		{issues: []beads.Issue{{ID: "T-1", Title: "Fix"}}},
+		{err: beads.ErrNoWork},
+	}}
+	pr := &fakePrinter{}
+	l := &fakeLogger{}
+	cfg := config.Config{
+		Mode:          config.DaemonMode,
+		SleepInterval: time.Millisecond,
+		BeadsEnabled:  true,
+		Prompt:        "",
+		Harness:       "claude",
+	}
+
+	// Cancel after waking so we get one full sleep/wake cycle.
+	countingLogger := &callbackLogger{
+		inner: l,
+		onEvent: func(name string) {
+			if name == "waking" {
+				cancel()
+			}
+		},
+	}
+
+	err := RunDaemon(ctx, cfg, &fakeHarness{}, b, countingLogger, pr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(pr.startCalls) != 1 {
+		t.Fatalf("expected 1 Starting call, got %d", len(pr.startCalls))
+	}
+	if pr.startCalls[0].mode != "daemon" {
+		t.Errorf("mode = %q, want daemon", pr.startCalls[0].mode)
+	}
+
+	if len(pr.iterCalls) != 1 {
+		t.Fatalf("expected 1 Iteration call, got %d", len(pr.iterCalls))
+	}
+	if pr.iterCalls[0].issueID != "T-1" {
+		t.Errorf("issueID = %q, want T-1", pr.iterCalls[0].issueID)
+	}
+	if pr.iterCalls[0].maxIter != 0 {
+		t.Errorf("maxIter = %d, want 0 (daemon)", pr.iterCalls[0].maxIter)
+	}
+
+	if pr.sleepCalls < 1 {
+		t.Error("expected at least 1 Sleeping call")
+	}
+	if pr.wakeCalls < 1 {
+		t.Error("expected at least 1 Waking call")
 	}
 }

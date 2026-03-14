@@ -33,11 +33,34 @@ type Harness interface {
 	Run(ctx context.Context, prompt string) (exitCode int, err error)
 }
 
+// Printer is the terminal output interface for human-facing progress messages.
+type Printer interface {
+	Starting(mode string, maxIter int, harness string, beads bool)
+	Iteration(n, maxIter int, issueID, title string)
+	Sleeping(d time.Duration)
+	Waking()
+	Done(total, succeeded, failed int, reason string)
+	VerboseDetail(msg string)
+}
+
+// iterResult holds the outcome of a single iteration.
+type iterResult struct {
+	ran        bool
+	issueID    string
+	issueTitle string
+	err        error
+}
+
 // RunOnce executes one iteration of the loop: claim an issue, assemble a
 // prompt, run the harness, and log the result.
 func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) (bool, error) {
+	r := runOnce(ctx, cfg, h, bc, log)
+	return r.ran, r.err
+}
+
+func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) iterResult {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return iterResult{err: err}
 	}
 
 	log.Event("iteration-start")
@@ -50,12 +73,12 @@ func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 			log.Event("beads-check", Field{"count", "0"})
 			if cfg.Prompt == "" {
 				log.Event("iteration-end", Field{"status", "no_work"})
-				return false, nil
+				return iterResult{}
 			}
 			// No issue but we have a user prompt, continue without issue.
 		} else if err != nil {
 			log.Event("iteration-end", Field{"status", "fail"}, Field{"error", err.Error()})
-			return false, fmt.Errorf("beads ready: %w", err)
+			return iterResult{err: fmt.Errorf("beads ready: %w", err)}
 		} else {
 			log.Event("beads-check", Field{"count", fmt.Sprintf("%d", len(issues))})
 			if len(issues) > 0 {
@@ -71,34 +94,46 @@ func RunOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 	assembled := prompt.Assemble(cfg.Prompt, issue, instruction)
 
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return iterResult{err: err}
+	}
+
+	var issueID, issueTitle string
+	if issue != nil {
+		issueID = issue.ID
+		issueTitle = issue.Title
 	}
 
 	_, err := h.Run(ctx, assembled)
 	if err != nil {
 		log.Event("iteration-end", Field{"status", "fail"}, Field{"error", err.Error()})
-		return true, fmt.Errorf("harness run: %w", err)
+		return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle, err: fmt.Errorf("harness run: %w", err)}
 	}
 
 	log.Event("iteration-end", Field{"status", "ok"})
-	return true, nil
+	return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle}
 }
 
 // RunDaemon runs RunOnce in a loop indefinitely until the context is cancelled.
 // When RunOnce returns no work, it sleeps for cfg.SleepInterval before re-checking.
 // When RunOnce returns work done, it immediately checks for the next issue.
-func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) error {
+func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
 	log.Event("session-start")
+	pr.Starting("daemon", 0, cfg.Harness, cfg.BeadsEnabled)
 
+	iterNum := 0
 	for {
 		if ctx.Err() != nil {
 			log.Event("session-end")
 			return nil
 		}
 
-		ran, runErr := RunOnce(ctx, cfg, h, bc, log)
-		if runErr != nil {
-			log.Event("error", Field{"message", runErr.Error()})
+		iterNum++
+		r := runOnce(ctx, cfg, h, bc, log)
+		if r.ran {
+			pr.Iteration(iterNum, 0, r.issueID, r.issueTitle)
+		}
+		if r.err != nil {
+			log.Event("error", Field{"message", r.err.Error()})
 		}
 
 		if ctx.Err() != nil {
@@ -106,8 +141,9 @@ func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient
 			return nil
 		}
 
-		if !ran {
+		if !r.ran {
 			log.Event("sleeping", Field{"duration", cfg.SleepInterval.String()})
+			pr.Sleeping(cfg.SleepInterval)
 			t := time.NewTimer(cfg.SleepInterval)
 			select {
 			case <-ctx.Done():
@@ -117,6 +153,7 @@ func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient
 			case <-t.C:
 			}
 			log.Event("waking")
+			pr.Waking()
 		}
 	}
 }
@@ -127,13 +164,17 @@ var ErrAllFailed = errors.New("all iterations failed")
 // RunMaxIter runs RunOnce up to cfg.MaxIterations times.
 // Stops early if RunOnce returns no work or context is cancelled.
 // Returns ErrAllFailed if every iteration failed.
-func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) error {
+func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
 	log.Event("session-start")
+	pr.Starting("max-iterations", cfg.MaxIterations, cfg.Harness, cfg.BeadsEnabled)
 
 	var total, succeeded, failed int
 
 	for i := 0; i < cfg.MaxIterations; i++ {
-		ran, err := RunOnce(ctx, cfg, h, bc, log)
+		r := runOnce(ctx, cfg, h, bc, log)
+		if r.ran {
+			pr.Iteration(i+1, cfg.MaxIterations, r.issueID, r.issueTitle)
+		}
 		if ctx.Err() != nil {
 			log.Event("session-end",
 				Field{"total", fmt.Sprintf("%d", total)},
@@ -142,18 +183,24 @@ func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClien
 			)
 			return nil
 		}
-		if !ran && err == nil {
+		if !r.ran && r.err == nil {
 			// No work available, stop early.
 			break
 		}
 		total++
-		if err != nil {
-			log.Event("error", Field{"message", err.Error()})
+		if r.err != nil {
+			log.Event("error", Field{"message", r.err.Error()})
 			failed++
 		} else {
 			succeeded++
 		}
 	}
+
+	reason := "max iterations reached"
+	if total < cfg.MaxIterations {
+		reason = "no work remaining"
+	}
+	pr.Done(total, succeeded, failed, reason)
 
 	log.Event("session-end",
 		Field{"total", fmt.Sprintf("%d", total)},
