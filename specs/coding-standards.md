@@ -35,7 +35,7 @@ No package-level `var` that gets mutated. Config passed as parameter. Logger pas
 
 ### Interfaces at the consumer
 
-Define interfaces where they are used, not where they are implemented. `loop/` defines `Harness` if it's the only consumer. If multiple consumers need the same interface, promote it to its own package.
+Define interfaces where they are used, not where they are implemented. `internal/loop/` defines `Harness` if it's the only consumer. If multiple consumers need the same interface, promote it to its own package.
 
 **Exception — factory functions:** When a package provides a `New()` factory that returns different concrete types (e.g., `harness.New()` returns a Claude, Codex, or Raw harness based on config), returning the interface from the factory is idiomatic. The interface lives in the same package as the implementations it selects between.
 
@@ -88,6 +88,6 @@ One file per major concept. Split when a single file exceeds ~300 lines, but pre
 ## Dependencies Between Packages
 
 - No circular imports (Go enforces this, but design to avoid needing workarounds).
-- No package depends on `cli/`. `cli/` depends on everything.
-- `loop/` is the only package that composes other domain packages.
-- Domain packages (`harness/`, `prompt/`, `beads/`) are independent of each other.
+- No package depends on `internal/cli/`. `internal/cli/` depends on everything.
+- `internal/loop/` is the only package that composes other domain packages.
+- Domain packages (`internal/harness/`, `internal/prompt/`, `internal/beads/`) are independent of each other.

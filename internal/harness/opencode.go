@@ -4,7 +4,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/jorgengundersen/afk/config"
+	"github.com/jorgengundersen/afk/internal/config"
 )
 
 type openCode struct {

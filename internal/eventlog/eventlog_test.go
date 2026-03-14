@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jorgengundersen/afk/eventlog"
+	"github.com/jorgengundersen/afk/internal/eventlog"
 )
 
 func TestF(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/jorgengundersen/afk/config"
+	"github.com/jorgengundersen/afk/internal/config"
 )
 
 // Harness runs an external agent CLI with a given prompt.

@@ -72,8 +72,8 @@ Terminal output goes to **stdout**. Errors go to **stderr**. `--stderr` mirrors 
 
 Following the architectural principle: observe at edges, pure code is silent.
 
-- **Log in `loop/`**: session start/end, iteration start/end, beads checks, sleep/wake, signal received.
+- **Log in `internal/loop/`**: session start/end, iteration start/end, beads checks, sleep/wake, signal received.
 - **Log in `cmd/afk/main.go`**: startup errors.
-- **Do NOT log in**: `prompt/` (pure), `config/` (pure), `harness/` (called from loop which logs), `beads/` (called from loop which logs).
+- **Do NOT log in**: `internal/prompt/` (pure), `internal/config/` (pure), `internal/harness/` (called from loop which logs), `internal/beads/` (called from loop which logs).
 
-If `harness/` or `beads/` encounter errors, they return them. `loop/` decides whether and how to log.
+If `internal/harness/` or `internal/beads/` encounter errors, they return them. `internal/loop/` decides whether and how to log.

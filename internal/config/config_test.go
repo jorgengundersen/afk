@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jorgengundersen/afk/config"
+	"github.com/jorgengundersen/afk/internal/config"
 )
 
 func validConfig() config.Config {

@@ -23,8 +23,9 @@ while true; do
   log "Found $count ready issue(s)"
 
   log "Running claude"
-  claude -p "$(cat PROMPT.md)" --stream 2>&1
-  log "Claude finished (exit code: $?)"
+  rc=0
+  claude -p "$(cat PROMPT.md)" --output-format stream-json --verbose 2>&1 || rc=$?
+  log "Claude finished (exit code: $rc)"
 
   sleep "$POLL_INTERVAL"
 done

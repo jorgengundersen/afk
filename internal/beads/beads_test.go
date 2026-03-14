@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jorgengundersen/afk/beads"
+	"github.com/jorgengundersen/afk/internal/beads"
 )
 
 // fakeBd creates a fake bd executable that outputs the given JSON and exits with code.

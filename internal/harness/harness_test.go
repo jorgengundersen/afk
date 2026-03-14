@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jorgengundersen/afk/config"
-	"github.com/jorgengundersen/afk/harness"
+	"github.com/jorgengundersen/afk/internal/config"
+	"github.com/jorgengundersen/afk/internal/harness"
 )
 
 func TestNew_unknown_harness(t *testing.T) {

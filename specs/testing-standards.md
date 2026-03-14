@@ -16,7 +16,7 @@ Run with: `go test ./...`
 
 ### Integration Tests (selective)
 
-Test that packages compose correctly. Primarily for `loop/` orchestration logic. Use build tag `//go:build integration` only if they require external binaries or are slow (>5s). Otherwise, they run with standard `go test`.
+Test that packages compose correctly. Primarily for `internal/loop/` orchestration logic. Use build tag `//go:build integration` only if they require external binaries or are slow (>5s). Otherwise, they run with standard `go test`.
 
 ### End-to-End Tests (few)
 
@@ -97,7 +97,7 @@ Name describes the scenario, not the expected outcome. `"empty_prompt_with_beads
 
 ### Interfaces enable test doubles
 
-The `Harness` interface exists partly to enable testing `loop/` without invoking real agent CLIs. Test doubles implement the same interface.
+The `Harness` interface exists partly to enable testing `internal/loop/` without invoking real agent CLIs. Test doubles implement the same interface.
 
 ### Fakes over mocks
 
@@ -151,7 +151,7 @@ go test -race ./...
 go test -v ./...
 
 # Specific package
-go test ./prompt/
+go test ./internal/prompt/
 
 # Integration tests (if tagged)
 go test -tags=integration ./...
