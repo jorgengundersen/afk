@@ -8,6 +8,15 @@ import (
 	"testing"
 )
 
+func TestRun_Doctor_RoutesToDoctorPackage(t *testing.T) {
+	code := run([]string{"doctor"})
+	// doctor.Run returns 0 when healthy; we just verify it doesn't fall
+	// through to the normal CLI path (which would return 2 for missing -prompt).
+	if code == 2 {
+		t.Fatalf("expected doctor subcommand to be routed, got exit code 2 (usage error)")
+	}
+}
+
 func TestRun_NoArgs_ExitUsageError(t *testing.T) {
 	code := run(nil)
 	if code != 2 {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jorgengundersen/afk/internal/beads"
 	"github.com/jorgengundersen/afk/internal/cli"
+	"github.com/jorgengundersen/afk/internal/doctor"
 	"github.com/jorgengundersen/afk/internal/eventlog"
 	"github.com/jorgengundersen/afk/internal/harness"
 	"github.com/jorgengundersen/afk/internal/loop"
@@ -19,6 +20,10 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == "doctor" {
+		return doctor.Run(os.Stdout, args[1:])
+	}
+
 	cfg, err := cli.ParseAndValidate(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "afk: %v\n", err)
