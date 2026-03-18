@@ -17,6 +17,26 @@ func TestRun_Doctor_RoutesToDoctorPackage(t *testing.T) {
 	}
 }
 
+func TestRun_Doctor_ExitCode0(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Chdir(t.TempDir())
+
+	code := run([]string{"doctor"})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+}
+
+func TestRun_Doctor_JsonFlag(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Chdir(t.TempDir())
+
+	code := run([]string{"doctor", "--json"})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+}
+
 func TestRun_NoArgs_ExitUsageError(t *testing.T) {
 	code := run(nil)
 	if code != 2 {
