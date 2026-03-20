@@ -122,20 +122,17 @@ func TestLogFile_CreatedWithExpectedEvents(t *testing.T) {
 		}
 	}
 
-	// Verify key=value format: iteration_end should have status=ok.
-	if !strings.Contains(logContent, "status=ok") {
-		t.Errorf("log missing status=ok\nlog content:\n%s", logContent)
+	// Verify key=value format: iteration-end should have exit-code=0.
+	if !strings.Contains(logContent, "exit-code=0") {
+		t.Errorf("log missing exit-code=0\nlog content:\n%s", logContent)
 	}
 
-	// Verify loop_end has counts.
-	if !strings.Contains(logContent, "total=1") {
-		t.Errorf("log missing total=1\nlog content:\n%s", logContent)
+	// Verify session-end has spec fields.
+	if !strings.Contains(logContent, "reason=") {
+		t.Errorf("log missing reason= in session-end\nlog content:\n%s", logContent)
 	}
-	if !strings.Contains(logContent, "succeeded=1") {
-		t.Errorf("log missing succeeded=1\nlog content:\n%s", logContent)
-	}
-	if !strings.Contains(logContent, "failed=0") {
-		t.Errorf("log missing failed=0\nlog content:\n%s", logContent)
+	if !strings.Contains(logContent, "total-iterations=1") {
+		t.Errorf("log missing total-iterations=1\nlog content:\n%s", logContent)
 	}
 }
 

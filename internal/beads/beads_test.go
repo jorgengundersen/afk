@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/jorgengundersen/afk/internal/beads"
@@ -18,19 +19,12 @@ func fakeBd(t *testing.T, output string, exitCode int) string {
 	if output != "" {
 		script += "cat <<'FAKEJSON'\n" + output + "\nFAKEJSON\n"
 	}
-	script += "exit " + itoa(exitCode) + "\n"
+	script += "exit " + strconv.Itoa(exitCode) + "\n"
 	path := filepath.Join(dir, "bd")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("writing fake bd: %v", err)
 	}
 	return dir
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	return string(rune('0' + n))
 }
 
 func TestNewClient(t *testing.T) {

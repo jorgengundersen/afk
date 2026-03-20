@@ -111,7 +111,7 @@ func TestRunOnce_HappyPath(t *testing.T) {
 		Prompt:       "do the work",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,19 +125,42 @@ func TestRunOnce_HappyPath(t *testing.T) {
 		t.Fatal("expected harness to receive a prompt")
 	}
 
-	// Should have iteration_start and iteration_end events
+	// Should have iteration-start and iteration-end events
 	if len(l.events) < 2 {
 		t.Fatalf("expected at least 2 log events, got %d", len(l.events))
 	}
-	if l.events[0].name != "iteration-start" {
-		t.Errorf("first event = %q, want iteration-start", l.events[0].name)
+	// Find iteration-start — should have iteration=1 and issue fields
+	var foundStart bool
+	for _, e := range l.events {
+		if e.name == "iteration-start" {
+			foundStart = true
+			if !hasField(e.fields, "iteration", "1") {
+				t.Errorf("iteration-start missing iteration=1, fields: %v", e.fields)
+			}
+			if !hasField(e.fields, "issue", "TST-1") {
+				t.Errorf("iteration-start missing issue=TST-1, fields: %v", e.fields)
+			}
+			if !hasField(e.fields, "title", "Fix bug") {
+				t.Errorf("iteration-start missing title, fields: %v", e.fields)
+			}
+		}
 	}
+	if !foundStart {
+		t.Error("expected iteration-start event")
+	}
+
 	last := l.events[len(l.events)-1]
 	if last.name != "iteration-end" {
 		t.Errorf("last event = %q, want iteration-end", last.name)
 	}
-	if !hasField(last.fields, "status", "ok") {
-		t.Errorf("iteration_end missing status=ok, fields: %v", last.fields)
+	if !hasField(last.fields, "exit-code", "0") {
+		t.Errorf("iteration-end missing exit-code=0, fields: %v", last.fields)
+	}
+	if !hasField(last.fields, "iteration", "1") {
+		t.Errorf("iteration-end missing iteration=1, fields: %v", last.fields)
+	}
+	if !hasFieldKey(last.fields, "duration") {
+		t.Errorf("iteration-end missing duration field, fields: %v", last.fields)
 	}
 }
 
@@ -150,7 +173,7 @@ func TestRunOnce_NoWork(t *testing.T) {
 		Prompt:       "",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,9 +184,14 @@ func TestRunOnce_NoWork(t *testing.T) {
 		t.Fatal("harness should not have been called")
 	}
 
-	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "status", "no_work") {
-		t.Errorf("expected status=no_work, got fields: %v", last.fields)
+	// No-work iterations should NOT emit iteration-start or iteration-end (Option C)
+	for _, e := range l.events {
+		if e.name == "iteration-start" {
+			t.Errorf("no-work iteration should not emit iteration-start, got: %v", e.fields)
+		}
+		if e.name == "iteration-end" {
+			t.Errorf("no-work iteration should not emit iteration-end, got: %v", e.fields)
+		}
 	}
 }
 
@@ -176,7 +204,7 @@ func TestRunOnce_HarnessFailure(t *testing.T) {
 		Prompt:       "do it",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err == nil {
 		t.Fatal("expected error from harness failure")
 	}
@@ -185,8 +213,17 @@ func TestRunOnce_HarnessFailure(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "status", "fail") {
-		t.Errorf("expected status=fail, got fields: %v", last.fields)
+	if last.name != "iteration-end" {
+		t.Errorf("last event = %q, want iteration-end", last.name)
+	}
+	if !hasField(last.fields, "exit-code", "1") {
+		t.Errorf("expected exit-code=1, got fields: %v", last.fields)
+	}
+	if !hasField(last.fields, "iteration", "1") {
+		t.Errorf("expected iteration=1, got fields: %v", last.fields)
+	}
+	if !hasFieldKey(last.fields, "duration") {
+		t.Errorf("expected duration field, got fields: %v", last.fields)
 	}
 }
 
@@ -202,7 +239,7 @@ func TestRunOnce_ContextCancel(t *testing.T) {
 		Prompt:       "do it",
 	}
 
-	_, err := doOnce(ctx, cfg, h, b, l)
+	_, err := doOnce(ctx, cfg, h, b, l, 1)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
@@ -216,7 +253,7 @@ func TestRunOnce_BeadsDisabled(t *testing.T) {
 		Prompt:       "just do the prompt",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, nil, l)
+	ran, err := doOnce(context.Background(), cfg, h, nil, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,8 +265,11 @@ func TestRunOnce_BeadsDisabled(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "status", "ok") {
-		t.Errorf("expected status=ok, got fields: %v", last.fields)
+	if last.name != "iteration-end" {
+		t.Errorf("last event = %q, want iteration-end", last.name)
+	}
+	if !hasField(last.fields, "exit-code", "0") {
+		t.Errorf("expected exit-code=0, got fields: %v", last.fields)
 	}
 }
 
@@ -344,14 +384,14 @@ func TestRunMaxIter_SingleSuccess(t *testing.T) {
 	if last.name != "session-end" {
 		t.Errorf("last event = %q, want session-end", last.name)
 	}
-	if !hasField(last.fields, "total", "1") {
-		t.Errorf("expected total=1, got %v", last.fields)
+	if !hasField(last.fields, "total-iterations", "1") {
+		t.Errorf("expected total-iterations=1, got %v", last.fields)
 	}
-	if !hasField(last.fields, "succeeded", "1") {
-		t.Errorf("expected succeeded=1, got %v", last.fields)
+	if !hasField(last.fields, "reason", "max-iterations") {
+		t.Errorf("expected reason=max-iterations, got %v", last.fields)
 	}
-	if !hasField(last.fields, "failed", "0") {
-		t.Errorf("expected failed=0, got %v", last.fields)
+	if !hasFieldKey(last.fields, "duration") {
+		t.Errorf("expected duration field, got %v", last.fields)
 	}
 }
 
@@ -428,11 +468,11 @@ func TestRunMaxIter_AllFailed(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "failed", "2") {
-		t.Errorf("expected failed=2, got %v", last.fields)
+	if !hasField(last.fields, "total-iterations", "2") {
+		t.Errorf("expected total-iterations=2, got %v", last.fields)
 	}
-	if !hasField(last.fields, "succeeded", "0") {
-		t.Errorf("expected succeeded=0, got %v", last.fields)
+	if !hasField(last.fields, "reason", "max-iterations") {
+		t.Errorf("expected reason=max-iterations, got %v", last.fields)
 	}
 }
 
@@ -462,8 +502,11 @@ func TestRunMaxIter_EarlyStopNoWork(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "total", "1") {
-		t.Errorf("expected total=1, got %v", last.fields)
+	if !hasField(last.fields, "total-iterations", "1") {
+		t.Errorf("expected total-iterations=1, got %v", last.fields)
+	}
+	if !hasField(last.fields, "reason", "no-work") {
+		t.Errorf("expected reason=no-work, got %v", last.fields)
 	}
 }
 
@@ -495,11 +538,11 @@ func TestRunMaxIter_NIterations(t *testing.T) {
 	}
 
 	last := l.events[len(l.events)-1]
-	if !hasField(last.fields, "total", "3") {
-		t.Errorf("expected total=3, got %v", last.fields)
+	if !hasField(last.fields, "total-iterations", "3") {
+		t.Errorf("expected total-iterations=3, got %v", last.fields)
 	}
-	if !hasField(last.fields, "succeeded", "3") {
-		t.Errorf("expected succeeded=3, got %v", last.fields)
+	if !hasField(last.fields, "reason", "max-iterations") {
+		t.Errorf("expected reason=max-iterations, got %v", last.fields)
 	}
 }
 
@@ -533,6 +576,15 @@ func TestRunDaemon_CleanShutdown(t *testing.T) {
 	last := l.events[len(l.events)-1]
 	if last.name != "session-end" {
 		t.Errorf("last event = %q, want session-end", last.name)
+	}
+	if !hasField(last.fields, "reason", "signal") {
+		t.Errorf("expected reason=signal, got %v", last.fields)
+	}
+	if !hasFieldKey(last.fields, "total-iterations") {
+		t.Errorf("expected total-iterations field, got %v", last.fields)
+	}
+	if !hasFieldKey(last.fields, "duration") {
+		t.Errorf("expected duration field, got %v", last.fields)
 	}
 }
 
@@ -725,6 +777,15 @@ func hasField(fields []Field, key, value string) bool {
 	return false
 }
 
+func hasFieldKey(fields []Field, key string) bool {
+	for _, f := range fields {
+		if f.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRunOnce_BeadsCheckEvent(t *testing.T) {
 	h := &fakeHarness{}
 	b := &fakeBeads{issues: []beads.Issue{{ID: "TST-1", Title: "Fix bug"}, {ID: "TST-2", Title: "Add feature"}}}
@@ -734,7 +795,7 @@ func TestRunOnce_BeadsCheckEvent(t *testing.T) {
 		Prompt:       "do work",
 	}
 
-	_, err := doOnce(context.Background(), cfg, h, b, l)
+	_, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -763,7 +824,7 @@ func TestRunOnce_BeadsCheckEventNoWork(t *testing.T) {
 		Prompt:       "",
 	}
 
-	doOnce(context.Background(), cfg, h, b, l)
+	doOnce(context.Background(), cfg, h, b, l, 1)
 
 	var found bool
 	for _, e := range l.events {
@@ -887,7 +948,7 @@ func TestRunOnce_InstructionPassedToPrompt(t *testing.T) {
 		Prompt:        "do work",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -909,7 +970,7 @@ func TestRunOnce_DefaultInstructionWhenEmpty(t *testing.T) {
 		Prompt:        "",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, b, l)
+	ran, err := doOnce(context.Background(), cfg, h, b, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -930,7 +991,7 @@ func TestRunOnce_NoInstructionWithoutIssue(t *testing.T) {
 		Prompt:        "just a prompt",
 	}
 
-	ran, err := doOnce(context.Background(), cfg, h, nil, l)
+	ran, err := doOnce(context.Background(), cfg, h, nil, l, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -997,8 +1058,8 @@ func TestRunMaxIter_PrinterCalls(t *testing.T) {
 	if pr.doneCalls[0].total != 2 || pr.doneCalls[0].succeeded != 2 {
 		t.Errorf("done = total=%d succeeded=%d, want 2/2", pr.doneCalls[0].total, pr.doneCalls[0].succeeded)
 	}
-	if pr.doneCalls[0].reason != "no work remaining" {
-		t.Errorf("reason = %q, want 'no work remaining'", pr.doneCalls[0].reason)
+	if pr.doneCalls[0].reason != "no-work" {
+		t.Errorf("reason = %q, want 'no-work'", pr.doneCalls[0].reason)
 	}
 }
 

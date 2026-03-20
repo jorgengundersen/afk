@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jorgengundersen/afk/internal/beads"
@@ -53,17 +54,15 @@ type iterResult struct {
 
 // doOnce executes one iteration of the loop: claim an issue, assemble a
 // prompt, run the harness, and log the result.
-func doOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) (bool, error) {
-	r := runOnce(ctx, cfg, h, bc, log)
+func doOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, iterNum int) (bool, error) {
+	r := runOnce(ctx, cfg, h, bc, log, iterNum)
 	return r.ran, r.err
 }
 
-func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger) iterResult {
+func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, iterNum int) iterResult {
 	if err := ctx.Err(); err != nil {
 		return iterResult{err: err}
 	}
-
-	log.Event("iteration-start")
 
 	var issue *beads.Issue
 
@@ -72,12 +71,12 @@ func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 		if errors.Is(err, beads.ErrNoWork) {
 			log.Event("beads-check", Field{"count", "0"})
 			if cfg.Prompt == "" {
-				log.Event("iteration-end", Field{"status", "no_work"})
+				// No work and no prompt — skip this iteration entirely (Option C).
 				return iterResult{}
 			}
 			// No issue but we have a user prompt, continue without issue.
 		} else if err != nil {
-			log.Event("iteration-end", Field{"status", "fail"}, Field{"error", err.Error()})
+			log.Event("error", Field{"message", fmt.Sprintf("beads ready: %s", err)})
 			return iterResult{err: fmt.Errorf("beads ready: %w", err)}
 		} else {
 			log.Event("beads-check", Field{"count", fmt.Sprintf("%d", len(issues))})
@@ -106,13 +105,30 @@ func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 		issueTitle = issue.Title
 	}
 
-	_, err = h.Run(ctx, assembled)
+	// Emit iteration-start with spec fields.
+	startFields := []Field{{"iteration", fmt.Sprintf("%d", iterNum)}}
+	if issue != nil {
+		startFields = append(startFields, Field{"issue", issue.ID}, Field{"title", issue.Title})
+	}
+	log.Event("iteration-start", startFields...)
+
+	iterStart := time.Now()
+
+	exitCode, err := h.Run(ctx, assembled)
 	if err != nil {
-		log.Event("iteration-end", Field{"status", "fail"}, Field{"error", err.Error()})
+		log.Event("iteration-end",
+			Field{"iteration", fmt.Sprintf("%d", iterNum)},
+			Field{"exit-code", fmt.Sprintf("%d", exitCode)},
+			Field{"duration", time.Since(iterStart).Round(time.Second).String()},
+		)
 		return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle, err: fmt.Errorf("harness run: %w", err)}
 	}
 
-	log.Event("iteration-end", Field{"status", "ok"})
+	log.Event("iteration-end",
+		Field{"iteration", fmt.Sprintf("%d", iterNum)},
+		Field{"exit-code", "0"},
+		Field{"duration", time.Since(iterStart).Round(time.Second).String()},
+	)
 	return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle}
 }
 
@@ -127,23 +143,56 @@ func Run(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log 
 	}
 }
 
+// modeString returns the human-readable name for a config.Mode.
+func modeString(m config.Mode) string {
+	switch m {
+	case config.DaemonMode:
+		return "daemon"
+	default:
+		return "max-iterations"
+	}
+}
+
+// sessionStartFields builds the fields for the session-start event.
+func sessionStartFields(cfg config.Config) []Field {
+	fields := []Field{{"mode", modeString(cfg.Mode)}}
+	if cfg.Mode == config.MaxIterationsMode {
+		fields = append(fields, Field{"max", fmt.Sprintf("%d", cfg.MaxIterations)})
+	}
+	fields = append(fields,
+		Field{"harness", cfg.Harness},
+		Field{"beads", fmt.Sprintf("%t", cfg.BeadsEnabled)},
+	)
+	if len(cfg.BeadsLabels) > 0 {
+		fields = append(fields, Field{"labels", strings.Join(cfg.BeadsLabels, ",")})
+	}
+	return fields
+}
+
 // RunDaemon runs the loop indefinitely until the context is cancelled.
 // When no work is found, it sleeps for cfg.SleepInterval before re-checking.
 // When work is done, it immediately checks for the next issue.
 func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
-	log.Event("session-start")
+	sessionStart := time.Now()
+	log.Event("session-start", sessionStartFields(cfg)...)
 	pr.Starting("daemon", 0, cfg.Harness, cfg.BeadsEnabled)
 
 	iterNum := 0
+	iterCount := 0
 	for {
 		if ctx.Err() != nil {
-			log.Event("session-end")
+			log.Event("session-end",
+				Field{"reason", "signal"},
+				Field{"total-iterations", fmt.Sprintf("%d", iterCount)},
+				Field{"duration", time.Since(sessionStart).Round(time.Second).String()},
+			)
 			return nil
 		}
 
 		iterNum++
-		r := runOnce(ctx, cfg, h, bc, log)
+		r := runOnce(ctx, cfg, h, bc, log, iterNum)
 		if r.ran {
+			iterCount++
 			pr.Iteration(iterNum, 0, r.issueID, r.issueTitle)
 		}
 		if r.err != nil {
@@ -151,7 +200,11 @@ func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient
 		}
 
 		if ctx.Err() != nil {
-			log.Event("session-end")
+			log.Event("session-end",
+				Field{"reason", "signal"},
+				Field{"total-iterations", fmt.Sprintf("%d", iterCount)},
+				Field{"duration", time.Since(sessionStart).Round(time.Second).String()},
+			)
 			return nil
 		}
 
@@ -162,7 +215,11 @@ func RunDaemon(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient
 			select {
 			case <-ctx.Done():
 				t.Stop()
-				log.Event("session-end")
+				log.Event("session-end",
+					Field{"reason", "signal"},
+					Field{"total-iterations", fmt.Sprintf("%d", iterCount)},
+					Field{"duration", time.Since(sessionStart).Round(time.Second).String()},
+				)
 				return nil
 			case <-t.C:
 			}
@@ -179,21 +236,22 @@ var ErrAllFailed = errors.New("all iterations failed")
 // Stops early if no work is available or context is cancelled.
 // Returns ErrAllFailed if every iteration failed.
 func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, log EventLogger, pr Printer) error {
-	log.Event("session-start")
+	sessionStart := time.Now()
+	log.Event("session-start", sessionStartFields(cfg)...)
 	pr.Starting("max-iterations", cfg.MaxIterations, cfg.Harness, cfg.BeadsEnabled)
 
 	var total, succeeded, failed int
 
 	for i := 0; i < cfg.MaxIterations; i++ {
-		r := runOnce(ctx, cfg, h, bc, log)
+		r := runOnce(ctx, cfg, h, bc, log, i+1)
 		if r.ran {
 			pr.Iteration(i+1, cfg.MaxIterations, r.issueID, r.issueTitle)
 		}
 		if ctx.Err() != nil {
 			log.Event("session-end",
-				Field{"total", fmt.Sprintf("%d", total)},
-				Field{"succeeded", fmt.Sprintf("%d", succeeded)},
-				Field{"failed", fmt.Sprintf("%d", failed)},
+				Field{"reason", "context-cancelled"},
+				Field{"total-iterations", fmt.Sprintf("%d", total)},
+				Field{"duration", time.Since(sessionStart).Round(time.Second).String()},
 			)
 			return nil
 		}
@@ -210,16 +268,16 @@ func RunMaxIter(ctx context.Context, cfg config.Config, h Harness, bc BeadsClien
 		}
 	}
 
-	reason := "max iterations reached"
+	reason := "max-iterations"
 	if total < cfg.MaxIterations {
-		reason = "no work remaining"
+		reason = "no-work"
 	}
 	pr.Done(total, succeeded, failed, reason)
 
 	log.Event("session-end",
-		Field{"total", fmt.Sprintf("%d", total)},
-		Field{"succeeded", fmt.Sprintf("%d", succeeded)},
-		Field{"failed", fmt.Sprintf("%d", failed)},
+		Field{"reason", reason},
+		Field{"total-iterations", fmt.Sprintf("%d", total)},
+		Field{"duration", time.Since(sessionStart).Round(time.Second).String()},
 	)
 
 	if total > 0 && failed == total {
