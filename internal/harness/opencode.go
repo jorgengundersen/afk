@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"os"
 	"os/exec"
 
 	"github.com/jorgengundersen/afk/internal/config"
@@ -27,6 +28,8 @@ func (o *openCode) Run(ctx context.Context, prompt string) (int, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

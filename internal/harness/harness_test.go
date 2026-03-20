@@ -333,6 +333,79 @@ func TestOpenCode_Run_with_model(t *testing.T) {
 	}
 }
 
+func TestClaude_Run_stdout_visible(t *testing.T) {
+	script := "#!/bin/sh\necho 'hello from claude'\n"
+	binDir := fakeBin(t, "claude", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "claude"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Capture stdout by redirecting os.Stdout to a pipe.
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	_, err = h.Run(context.Background(), "test prompt")
+	os.Stdout = origStdout
+	w.Close()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := make([]byte, 256)
+	n, _ := r.Read(out)
+	r.Close()
+	if n == 0 {
+		t.Fatal("expected stdout output from harness child process, got nothing")
+	}
+	if got := string(out[:n]); got != "hello from claude\n" {
+		t.Errorf("stdout = %q, want %q", got, "hello from claude\n")
+	}
+}
+
+func TestOpenCode_Run_stdout_visible(t *testing.T) {
+	script := "#!/bin/sh\necho 'hello from opencode'\n"
+	binDir := fakeBin(t, "opencode", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "opencode"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	_, err = h.Run(context.Background(), "test prompt")
+	os.Stdout = origStdout
+	w.Close()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := make([]byte, 256)
+	n, _ := r.Read(out)
+	r.Close()
+	if n == 0 {
+		t.Fatal("expected stdout output from harness child process, got nothing")
+	}
+	if got := string(out[:n]); got != "hello from opencode\n" {
+		t.Errorf("stdout = %q, want %q", got, "hello from opencode\n")
+	}
+}
+
 func TestNew_binary_not_in_path(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // empty dir, no claude binary
 
