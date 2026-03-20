@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/jorgengundersen/afk/internal/beads"
@@ -14,11 +15,15 @@ const DefaultInstruction = "Claim this issue and complete it. Follow AGENTS.md i
 // Assemble builds the final prompt string from a user prompt, an optional
 // beads issue, and an instruction string. The instruction is only included
 // when an issue is present. It is a pure function with no I/O or side effects.
-func Assemble(userPrompt string, issue *beads.Issue, instruction string) string {
+func Assemble(userPrompt string, issue *beads.Issue, instruction string) (string, error) {
 	var parts []string
 
 	if issue != nil {
-		parts = append(parts, formatIssue(issue))
+		formatted, err := formatIssue(issue)
+		if err != nil {
+			return "", fmt.Errorf("formatting issue %s: %w", issue.ID, err)
+		}
+		parts = append(parts, formatted)
 		if instruction != "" {
 			parts = append(parts, instruction)
 		}
@@ -28,15 +33,19 @@ func Assemble(userPrompt string, issue *beads.Issue, instruction string) string 
 		parts = append(parts, userPrompt)
 	}
 
-	return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n\n"), nil
 }
 
-func formatIssue(issue *beads.Issue) string {
+func formatIssue(issue *beads.Issue) (string, error) {
 	var fields struct {
 		Description        string `json:"description"`
 		AcceptanceCriteria string `json:"acceptance_criteria"`
 	}
-	_ = json.Unmarshal(issue.Raw, &fields)
+	if len(issue.Raw) > 0 {
+		if err := json.Unmarshal(issue.Raw, &fields); err != nil {
+			return "", err
+		}
+	}
 
 	var b strings.Builder
 	b.WriteString("## Issue: ")
@@ -54,5 +63,5 @@ func formatIssue(issue *beads.Issue) string {
 		b.WriteString(fields.AcceptanceCriteria)
 	}
 
-	return b.String()
+	return b.String(), nil
 }

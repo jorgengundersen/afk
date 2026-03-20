@@ -91,7 +91,10 @@ func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 	if instruction == "" {
 		instruction = prompt.DefaultInstruction
 	}
-	assembled := prompt.Assemble(cfg.Prompt, issue, instruction)
+	assembled, err := prompt.Assemble(cfg.Prompt, issue, instruction)
+	if err != nil {
+		return iterResult{err: err}
+	}
 
 	if err := ctx.Err(); err != nil {
 		return iterResult{err: err}
@@ -103,7 +106,7 @@ func runOnce(ctx context.Context, cfg config.Config, h Harness, bc BeadsClient, 
 		issueTitle = issue.Title
 	}
 
-	_, err := h.Run(ctx, assembled)
+	_, err = h.Run(ctx, assembled)
 	if err != nil {
 		log.Event("iteration-end", Field{"status", "fail"}, Field{"error", err.Error()})
 		return iterResult{ran: true, issueID: issueID, issueTitle: issueTitle, err: fmt.Errorf("harness run: %w", err)}

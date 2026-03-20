@@ -101,7 +101,10 @@ func TestAssemble(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := prompt.Assemble(tt.prompt, tt.issue, tt.instruction)
+			got, err := prompt.Assemble(tt.prompt, tt.issue, tt.instruction)
+			if err != nil {
+				t.Fatalf("Assemble() unexpected error: %v", err)
+			}
 
 			if tt.wantEmpty {
 				if got != "" {
@@ -124,9 +127,24 @@ func TestAssemble(t *testing.T) {
 	}
 }
 
+func TestAssemble_MalformedJSON(t *testing.T) {
+	issue := &beads.Issue{
+		ID:    "TST-BAD",
+		Title: "Bad JSON",
+		Raw:   []byte(`{not valid json`),
+	}
+	_, err := prompt.Assemble("", issue, "instruction")
+	if err == nil {
+		t.Fatal("expected error for malformed issue JSON, got nil")
+	}
+}
+
 func TestAssemble_InstructionAfterIssue(t *testing.T) {
 	issue := makeIssue("TST-1", "Fix", "broken", "criteria")
-	got := prompt.Assemble("", issue, "do the work")
+	got, err := prompt.Assemble("", issue, "do the work")
+	if err != nil {
+		t.Fatalf("Assemble() unexpected error: %v", err)
+	}
 
 	issueIdx := strings.Index(got, "TST-1")
 	instrIdx := strings.Index(got, "do the work")
