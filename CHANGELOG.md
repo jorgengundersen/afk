@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-20
+
+### Added
+
+- **Harness**: claude harness now passes `--output-format stream-json --verbose` for real-time visibility into agent activity during headless runs.
+
 ## [1.1.0] - 2026-03-20
 
 ### Added
@@ -45,6 +51,7 @@ Initial release of afk — an autonomous loop runner for AI coding agents.
 - **Documentation**: user guide, CLI reference, harness documentation, logging reference, and README.
 - **End-to-end and unit test suites** covering all packages.
 
-[Unreleased]: https://github.com/jorgengundersen/afk/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jorgengundersen/afk/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jorgengundersen/afk/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jorgengundersen/afk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jorgengundersen/afk/releases/tag/v1.0.0
