@@ -3,6 +3,7 @@ package doctor
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,9 @@ func TestPrintJSON_MarshalReport(t *testing.T) {
 	r.Beads.Doctor = BeadsDoctorStatus{Status: "ok", OverallOK: true, CLIVersion: "0.5.0"}
 
 	var buf bytes.Buffer
-	PrintJSON(&buf, r)
+	if err := PrintJSON(&buf, r); err != nil {
+		t.Fatalf("PrintJSON: %v", err)
+	}
 
 	// Output must be valid JSON.
 	var parsed map[string]any
@@ -51,6 +54,20 @@ func TestPrintJSON_MarshalReport(t *testing.T) {
 	// Must be indented (2-space).
 	if !bytes.Contains(buf.Bytes(), []byte("  ")) {
 		t.Error("expected indented JSON output")
+	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("write failed")
+}
+
+func TestPrintJSON_WriteError(t *testing.T) {
+	r := Report{Harnesses: map[string]HarnessStatus{}}
+	err := PrintJSON(errWriter{}, r)
+	if err == nil {
+		t.Fatal("expected error from failing writer, got nil")
 	}
 }
 

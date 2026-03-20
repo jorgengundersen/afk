@@ -211,10 +211,14 @@ func PrintHuman(w io.Writer, r Report) {
 }
 
 // PrintJSON marshals the Report as indented JSON and writes it to w.
-func PrintJSON(w io.Writer, r Report) {
-	data, _ := json.MarshalIndent(r, "", "  ")
+func PrintJSON(w io.Writer, r Report) error {
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
 	data = append(data, '\n')
-	w.Write(data)
+	_, err = w.Write(data)
+	return err
 }
 
 // Run is the entry point for the "afk doctor" subcommand.
@@ -231,7 +235,10 @@ func Run(w io.Writer, args []string) int {
 	r := Collect()
 
 	if *jsonFlag {
-		PrintJSON(w, r)
+		if err := PrintJSON(w, r); err != nil {
+			fmt.Fprintf(w, "error: %v\n", err)
+			return 1
+		}
 	} else {
 		PrintHuman(w, r)
 	}
