@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -247,6 +248,25 @@ func TestSetupSignals_CancelFunc(t *testing.T) {
 		// success
 	case <-time.After(time.Second):
 		t.Fatal("context was not cancelled after cancel()")
+	}
+}
+
+func TestSetupSignals_NoGoroutineLeakOnCancel(t *testing.T) {
+	before := runtime.NumGoroutine()
+
+	// Create and immediately cancel several signal contexts without sending a signal.
+	for i := 0; i < 10; i++ {
+		_, cancel := cli.SetupSignals([]os.Signal{syscall.SIGUSR1})
+		cancel()
+	}
+
+	// Allow goroutines time to exit.
+	time.Sleep(100 * time.Millisecond)
+
+	after := runtime.NumGoroutine()
+	// If goroutines leak, we'd see at least 10 extra goroutines.
+	if after-before >= 5 {
+		t.Errorf("goroutine leak: before=%d after=%d (delta=%d)", before, after, after-before)
 	}
 }
 

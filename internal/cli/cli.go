@@ -164,11 +164,15 @@ func SetupSignals(signals []os.Signal, opts ...SignalOption) (context.Context, c
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, signals...)
 	go func() {
-		sig := <-ch
-		if o.onSignal != nil {
-			o.onSignal(sig.String())
+		select {
+		case sig := <-ch:
+			if o.onSignal != nil {
+				o.onSignal(sig.String())
+			}
+			cancel()
+		case <-ctx.Done():
 		}
-		cancel()
+		signal.Stop(ch)
 	}()
 	return ctx, cancel
 }
