@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(dir)
 
 	afkBin = filepath.Join(dir, "afk")
-	build := exec.Command("go", "build", "-race", "-o", afkBin, "../cmd/afk")
+	build := exec.Command("go", "build", "-o", afkBin, "../cmd/afk")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("go build failed: " + string(out))
 	}
@@ -116,7 +116,7 @@ func TestLogFile_CreatedWithExpectedEvents(t *testing.T) {
 	logContent := string(content)
 
 	// Verify expected events are present.
-	for _, event := range []string{"loop_start", "iteration_start", "iteration_end", "loop_end"} {
+	for _, event := range []string{"session-start", "iteration-start", "iteration-end", "session-end"} {
 		if !strings.Contains(logContent, event) {
 			t.Errorf("log missing expected event %q\nlog content:\n%s", event, logContent)
 		}

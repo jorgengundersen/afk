@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,7 @@ func fakeClaude(t *testing.T, exitCode int) string {
 	t.Helper()
 	dir := t.TempDir()
 	script := filepath.Join(dir, "claude")
-	content := "#!/bin/sh\nexit " + strings.Repeat("", 0) + string(rune('0'+exitCode)) + "\n"
+	content := "#!/bin/sh\nexit " + strconv.Itoa(exitCode) + "\n"
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
