@@ -66,7 +66,7 @@ func TestClaude_Run_exit_zero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading args file: %v", err)
 	}
-	want := "-p\ntest prompt\n--dangerously-skip-permissions\n"
+	want := "-p\ntest prompt\n--dangerously-skip-permissions\n--output-format\nstream-json\n--verbose\n"
 	if string(got) != want {
 		t.Errorf("args = %q, want %q", string(got), want)
 	}
@@ -132,7 +132,7 @@ func TestClaude_Run_with_agent_flags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading args file: %v", err)
 	}
-	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--model opus\n"
+	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--output-format\nstream-json\n--verbose\n--model opus\n"
 	if string(got) != want {
 		t.Errorf("args = %q, want %q", string(got), want)
 	}
@@ -160,7 +160,7 @@ func TestClaude_Run_with_model(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading args file: %v", err)
 	}
-	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--model\nopus\n"
+	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--output-format\nstream-json\n--verbose\n--model\nopus\n"
 	if string(got) != want {
 		t.Errorf("args = %q, want %q", string(got), want)
 	}
@@ -188,7 +188,7 @@ func TestClaude_Run_with_model_and_agent_flags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading args file: %v", err)
 	}
-	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--model\nopus\n--verbose\n"
+	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--output-format\nstream-json\n--verbose\n--model\nopus\n--verbose\n"
 	if string(got) != want {
 		t.Errorf("args = %q, want %q", string(got), want)
 	}
@@ -403,6 +403,34 @@ func TestOpenCode_Run_stdout_visible(t *testing.T) {
 	}
 	if got := string(out[:n]); got != "hello from opencode\n" {
 		t.Errorf("stdout = %q, want %q", got, "hello from opencode\n")
+	}
+}
+
+func TestClaude_Run_stream_json(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nexit 0\n"
+	binDir := fakeBin(t, "claude", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "claude"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = h.Run(context.Background(), "test prompt")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading args file: %v", err)
+	}
+	want := "-p\ntest prompt\n--dangerously-skip-permissions\n--output-format\nstream-json\n--verbose\n"
+	if string(got) != want {
+		t.Errorf("args = %q, want %q", string(got), want)
 	}
 }
 

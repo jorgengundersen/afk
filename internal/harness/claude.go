@@ -19,7 +19,7 @@ func newClaude(cfg config.Config) *claude {
 
 // Run invokes claude -p <prompt> --dangerously-skip-permissions [--model M] [extra args].
 func (c *claude) Run(ctx context.Context, prompt string) (int, error) {
-	args := []string{"-p", prompt, "--dangerously-skip-permissions"}
+	args := []string{"-p", prompt, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"}
 	if c.model != "" {
 		args = append(args, "--model", c.model)
 	}
