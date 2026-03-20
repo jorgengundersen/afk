@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.0] - 2026-03-20
+
+### Added
+
+- **Nix flake** for building and development.
+
+### Fixed
+
+- **Harness**: connect child process stdout/stderr to terminal.
+- **Harness**: wire `--model` flag into claude and opencode harnesses.
+- **CLI**: prevent goroutine leak in `SetupSignals` on context cancel.
+- **Doctor**: propagate errors in `PrintJSON`.
+- **Prompt**: propagate JSON unmarshal error in `formatIssue`.
+- **Docs**: correct flag dashes and add model value guidance.
+- **Logging**: align logging events with spec and fix test fragilities.
+
 ## [1.0.0] - 2026-03-18
 
 Initial release of afk — an autonomous loop runner for AI coding agents.
@@ -27,4 +45,6 @@ Initial release of afk — an autonomous loop runner for AI coding agents.
 - **Documentation**: user guide, CLI reference, harness documentation, logging reference, and README.
 - **End-to-end and unit test suites** covering all packages.
 
+[Unreleased]: https://github.com/jorgengundersen/afk/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jorgengundersen/afk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jorgengundersen/afk/releases/tag/v1.0.0

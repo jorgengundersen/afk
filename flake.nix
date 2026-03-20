@@ -19,7 +19,7 @@
         {
           default = pkgs.buildGoModule {
             pname = "afk";
-            version = "0.0.0-dev";
+            version = "1.1.0";
             src = ./.;
             vendorHash = null;
             meta = {
