@@ -8,7 +8,7 @@
 afk [flags] [-- passthrough-args...]
 ```
 
-Prompts can be provided via `-prompt` or piped through stdin.
+Prompts can be provided via `--prompt` or piped through stdin.
 
 ## Flags
 
@@ -49,9 +49,9 @@ Use `--raw` to bypass the harness system entirely and run an arbitrary command. 
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--prompt` | string | _(empty)_ | Prompt text for the agent |
+| `---prompt` | string | _(empty)_ | Prompt text for the agent |
 
-If `--prompt` is not set, afk reads from stdin (when piped). At least one of `--prompt`, stdin, or `--beads` must provide input — otherwise afk exits with an error.
+If `---prompt` is not set, afk reads from stdin (when piped). At least one of `---prompt`, stdin, or `--beads` must provide input — otherwise afk exits with an error.
 
 ### Beads
 
@@ -102,7 +102,7 @@ Certain flag combinations are invalid and cause afk to exit immediately with exi
 ### Run a single prompt for up to 5 iterations
 
 ```
-afk -prompt "refactor the auth module" -n 5
+afk --prompt "refactor the auth module" -n 5
 ```
 
 ### Daemon mode with beads integration
@@ -114,7 +114,7 @@ afk -d --beads
 ### Filter beads issues by label
 
 ```
-afk --beads-labels "backend,p0" -prompt "fix the highest priority issue"
+afk --beads-labels "backend,p0" --prompt "fix the highest priority issue"
 ```
 
 ### Custom sleep interval in daemon mode
@@ -132,13 +132,13 @@ echo "fix all TODO comments" | afk -n 10
 ### Use a different harness and model
 
 ```
-afk --harness opencode --model gpt-4o -prompt "add unit tests"
+afk --harness opencode --model gpt-4o --prompt "add unit tests"
 ```
 
 ### Raw command mode with aider
 
 ```
-afk --raw "aider --yes --message {prompt}" -prompt "fix the login bug"
+afk --raw "aider --yes --message {prompt}" --prompt "fix the login bug"
 ```
 
 ### Run in a different directory

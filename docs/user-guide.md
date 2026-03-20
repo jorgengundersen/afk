@@ -152,8 +152,8 @@ afk --beads -v -n 1
 
 ### Keep it quiet
 
-Use `-q` to suppress all terminal output except errors:
+Use `--quiet` to suppress all terminal output except errors:
 
 ```
-afk --beads -d -q
+afk --beads -d --quiet
 ```
