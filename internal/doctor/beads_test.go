@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -123,7 +124,7 @@ func fakeBd(t *testing.T, output string, exitCode int) string {
 		script += "cat <<'FAKEJSON'\n" + output + "\nFAKEJSON\n"
 	}
 	if exitCode != 0 {
-		script += "exit " + string(rune('0'+exitCode)) + "\n"
+		script += "exit " + strconv.Itoa(exitCode) + "\n"
 	}
 	path := filepath.Join(dir, "bd")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {

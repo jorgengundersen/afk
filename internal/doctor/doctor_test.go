@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -248,7 +249,7 @@ func fakeBinWithOutput(t *testing.T, name, output string, exitCode int) string {
 		script += "/bin/cat " + dataPath + "\n"
 	}
 	if exitCode != 0 {
-		script += "exit " + string(rune('0'+exitCode)) + "\n"
+		script += "exit " + strconv.Itoa(exitCode) + "\n"
 	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
