@@ -36,6 +36,8 @@ afk --harness claude --model opus -p "fix the login bug"
 
 This runs: `claude -p "fix the login bug" --dangerously-skip-permissions --model opus`
 
+Valid `--model` values are whatever the `claude` CLI accepts (e.g., `opus`, `sonnet`). Run `claude --help` to see available models.
+
 ## OpenCode
 
 Binary: `opencode`
@@ -58,6 +60,8 @@ afk --harness opencode --model gpt-4o -p "add unit tests"
 ```
 
 This runs: `opencode -p "add unit tests" --yes --model gpt-4o`
+
+Valid `--model` values are whatever the `opencode` CLI accepts (e.g., `gpt-4o`). Run `opencode --help` to see available models.
 
 ## Codex and Copilot (coming soon)
 

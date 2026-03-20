@@ -29,7 +29,7 @@ In the default max-iterations mode, afk runs up to `-n` iterations and exits. In
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--harness` | string | `claude` | Agent harness to use: `claude`, `opencode`, `codex`, `copilot` |
-| `--model` | string | _(empty)_ | Model name passed to the harness |
+| `--model` | string | _(empty)_ | Model name passed to the harness (valid values depend on the harness — see [Harnesses](harnesses.md)) |
 | `--agent-flags` | string | _(empty)_ | Extra flags forwarded to the harness CLI |
 | `--raw` | string | _(empty)_ | Raw command string (bypasses harness) |
 
@@ -49,9 +49,9 @@ Use `--raw` to bypass the harness system entirely and run an arbitrary command. 
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `---prompt` | string | _(empty)_ | Prompt text for the agent |
+| `--prompt` | string | _(empty)_ | Prompt text for the agent |
 
-If `---prompt` is not set, afk reads from stdin (when piped). At least one of `---prompt`, stdin, or `--beads` must provide input — otherwise afk exits with an error.
+If `--prompt` is not set, afk reads from stdin (when piped). At least one of `--prompt`, stdin, or `--beads` must provide input — otherwise afk exits with an error.
 
 ### Beads
 
