@@ -4,7 +4,7 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 
 ## Development Practice
 
-**Red/green TDD** — one failing test, one implementation, commit. No code without a failing test first.
+**Red/green TDD** — one failing test, one implementation, commit. No code without a failing test first. TDD applies to code, not documentation.
 
 ## Quick Reference
 
