@@ -8,16 +8,20 @@ import (
 )
 
 type claude struct {
+	model      string
 	agentFlags string
 }
 
 func newClaude(cfg config.Config) *claude {
-	return &claude{agentFlags: cfg.AgentFlags}
+	return &claude{model: cfg.Model, agentFlags: cfg.AgentFlags}
 }
 
-// Run invokes claude -p <prompt> --dangerously-skip-permissions [extra args].
+// Run invokes claude -p <prompt> --dangerously-skip-permissions [--model M] [extra args].
 func (c *claude) Run(ctx context.Context, prompt string) (int, error) {
 	args := []string{"-p", prompt, "--dangerously-skip-permissions"}
+	if c.model != "" {
+		args = append(args, "--model", c.model)
+	}
 	if c.agentFlags != "" {
 		args = append(args, c.agentFlags)
 	}

@@ -20,18 +20,18 @@ Binary: `claude` (Claude Code CLI)
 Invocation:
 
 ```
-claude -p <prompt> --dangerously-skip-permissions [agent-flags...]
+claude -p <prompt> --dangerously-skip-permissions [--model M] [agent-flags...]
 ```
 
 The `--dangerously-skip-permissions` flag is always passed so Claude Code runs non-interactively without prompting for tool approvals.
 
-- `--model` is forwarded via `--agent-flags` (e.g. `--agent-flags "--model opus"`)
+- `--model` is forwarded as `--model <value>` to the claude CLI
 - `--agent-flags` appends arbitrary flags after the base invocation
 
 Example:
 
 ```
-afk --harness claude --agent-flags "--model opus" -p "fix the login bug"
+afk --harness claude --model opus -p "fix the login bug"
 ```
 
 This runs: `claude -p "fix the login bug" --dangerously-skip-permissions --model opus`
@@ -43,18 +43,18 @@ Binary: `opencode`
 Invocation:
 
 ```
-opencode -p <prompt> --yes [agent-flags...]
+opencode -p <prompt> --yes [--model M] [agent-flags...]
 ```
 
 The `--yes` flag is always passed for non-interactive execution.
 
-- `--model` is forwarded via `--agent-flags` (e.g. `--agent-flags "--model gpt-4o"`)
+- `--model` is forwarded as `--model <value>` to the opencode CLI
 - `--agent-flags` appends arbitrary flags after the base invocation
 
 Example:
 
 ```
-afk --harness opencode --agent-flags "--model gpt-4o" -p "add unit tests"
+afk --harness opencode --model gpt-4o -p "add unit tests"
 ```
 
 This runs: `opencode -p "add unit tests" --yes --model gpt-4o`

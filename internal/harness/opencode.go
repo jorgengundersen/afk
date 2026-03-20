@@ -8,16 +8,20 @@ import (
 )
 
 type openCode struct {
+	model      string
 	agentFlags string
 }
 
 func newOpenCode(cfg config.Config) *openCode {
-	return &openCode{agentFlags: cfg.AgentFlags}
+	return &openCode{model: cfg.Model, agentFlags: cfg.AgentFlags}
 }
 
-// Run invokes opencode -p <prompt> --yes [extra args].
+// Run invokes opencode -p <prompt> --yes [--model M] [extra args].
 func (o *openCode) Run(ctx context.Context, prompt string) (int, error) {
 	args := []string{"-p", prompt, "--yes"}
+	if o.model != "" {
+		args = append(args, "--model", o.model)
+	}
 	if o.agentFlags != "" {
 		args = append(args, o.agentFlags)
 	}

@@ -138,6 +138,62 @@ func TestClaude_Run_with_agent_flags(t *testing.T) {
 	}
 }
 
+func TestClaude_Run_with_model(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nexit 0\n"
+	binDir := fakeBin(t, "claude", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "claude", Model: "opus"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = h.Run(context.Background(), "do stuff")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading args file: %v", err)
+	}
+	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--model\nopus\n"
+	if string(got) != want {
+		t.Errorf("args = %q, want %q", string(got), want)
+	}
+}
+
+func TestClaude_Run_with_model_and_agent_flags(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nexit 0\n"
+	binDir := fakeBin(t, "claude", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "claude", Model: "opus", AgentFlags: "--verbose"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = h.Run(context.Background(), "do stuff")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading args file: %v", err)
+	}
+	want := "-p\ndo stuff\n--dangerously-skip-permissions\n--model\nopus\n--verbose\n"
+	if string(got) != want {
+		t.Errorf("args = %q, want %q", string(got), want)
+	}
+}
+
 func TestNew_opencode(t *testing.T) {
 	binDir := fakeBin(t, "opencode", "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
@@ -244,6 +300,34 @@ func TestOpenCode_Run_with_agent_flags(t *testing.T) {
 		t.Fatalf("reading args file: %v", err)
 	}
 	want := "-p\ndo stuff\n--yes\n--model gpt-4\n"
+	if string(got) != want {
+		t.Errorf("args = %q, want %q", string(got), want)
+	}
+}
+
+func TestOpenCode_Run_with_model(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nexit 0\n"
+	binDir := fakeBin(t, "opencode", script)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	cfg := config.Config{Harness: "opencode", Model: "gpt-4o"}
+	h, err := harness.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = h.Run(context.Background(), "do stuff")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("reading args file: %v", err)
+	}
+	want := "-p\ndo stuff\n--yes\n--model\ngpt-4o\n"
 	if string(got) != want {
 		t.Errorf("args = %q, want %q", string(got), want)
 	}
