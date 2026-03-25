@@ -43,6 +43,31 @@ Diamond:   A → C, B → C       (C: --deps A,B)
 Default serial. Only parallelize when clearly independent — wrong parallelism
 causes conflicts, wrong serialization just slows down.
 
+## TDD-compatible task structure
+
+This project uses red/green TDD. The implementing agent handles the TDD
+procedure — epic tasks don't prescribe it. Instead, scope each code task as
+a single testable behaviour so TDD applies naturally.
+
+**Task descriptions should provide:**
+- What to build (the behaviour/contract)
+- Why it exists (how it fits in the larger picture)
+- Constraints (design decisions, boundaries, what's in/out of scope)
+
+**Task descriptions should NOT prescribe:**
+- Specific test cases
+- RED/GREEN labels or implementation steps
+
+The implementing agent has the spec, the codebase, and TDD discipline to
+decide test cases and implementation order.
+
+Example:
+
+```bash
+bd create "ParseFlags function" -t task --parent bd-x \
+  -d "ParseFlags(args []string) (Config, error) using local FlagSet. Defaults: MaxIter=20, Sleep=60s, Harness=claude. Track explicitly-set flags via FlagSet.Visit for later validation." --json
+```
+
 ## Process
 
 1. Read spec/description.
@@ -53,5 +78,6 @@ causes conflicts, wrong serialization just slows down.
    bd create "<task>" -t task --parent <epic> -d "<what+done>" --json
    bd create "<task>" -t task --parent <epic> -d "<what+done>" --deps <prev> --json
    ```
+   For code tasks, scope each as a single testable behaviour.
 5. Verify: `bd dep tree <epic> --json`
 6. Show dep tree to user. No implementation until approved.
