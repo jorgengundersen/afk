@@ -221,6 +221,92 @@ func (c *cancellingFakeRunner) Run(ctx context.Context, prompt string) (int, err
 	return code, err
 }
 
+func TestIterationEventsBracketEachIteration(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := config.Config{MaxIter: 3, Prompt: "p"}
+
+	_, err := Run(context.Background(), cfg, runner, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	names := logger.eventNames()
+	// Expect: session-start, (iteration-start, iteration-end) x3, session-end
+	expected := []string{
+		"session-start",
+		"iteration-start", "iteration-end",
+		"iteration-start", "iteration-end",
+		"iteration-start", "iteration-end",
+		"session-end",
+	}
+	if !slices.Equal(names, expected) {
+		t.Fatalf("event sequence mismatch:\n  got:  %v\n  want: %v", names, expected)
+	}
+}
+
+func TestIterationEndContainsExitCodeAndDuration(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 42}}}
+	logger := &spyLogger{}
+	cfg := config.Config{MaxIter: 1, Prompt: "p"}
+
+	_, err := Run(context.Background(), cfg, runner, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the iteration-end event
+	var iterEnd *loggedEvent
+	for i := range logger.events {
+		if logger.events[i].event == "iteration-end" {
+			iterEnd = &logger.events[i]
+			break
+		}
+	}
+	if iterEnd == nil {
+		t.Fatal("no iteration-end event found")
+	}
+
+	if iterEnd.fields["exitCode"] != 42 {
+		t.Errorf("expected exitCode=42, got %v", iterEnd.fields["exitCode"])
+	}
+	if _, ok := iterEnd.fields["duration"]; !ok {
+		t.Error("iteration-end missing duration field")
+	}
+	if iterEnd.fields["iteration"] != 1 {
+		t.Errorf("expected iteration=1, got %v", iterEnd.fields["iteration"])
+	}
+}
+
+func TestDaemonWakingEventLogged(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	callCount := 0
+	runner := &cancellingFakeRunner{
+		inner:       &fakeRunner{results: []runResult{{exitCode: 0}}},
+		cancelAfter: 2,
+		cancel:      cancel,
+		calls:       &callCount,
+	}
+	logger := &spyLogger{}
+	cfg := config.Config{
+		Daemon:  true,
+		Sleep:   10 * time.Millisecond,
+		Prompt:  "p",
+		MaxIter: 20,
+	}
+
+	_, err := Run(ctx, cfg, runner, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// After first iteration and sleep, "waking" should be logged
+	names := logger.eventNames()
+	if !slices.Contains(names, "waking") {
+		t.Errorf("expected waking event, got %v", names)
+	}
+}
+
 func TestDaemonSleepsBetweenIterations(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	callCount := 0

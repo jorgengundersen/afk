@@ -188,6 +188,35 @@ func TestDoubleCloseReturnsNil(t *testing.T) {
 	}
 }
 
+func TestFileCreatedOnFirstLogNotNew(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	_ = New(tmpFile)
+
+	// File should NOT exist after New — lazy open means no file until Log.
+	if _, err := os.Stat(tmpFile); err == nil {
+		t.Fatal("file should not exist after New(), before any Log() call")
+	}
+}
+
+func TestLogCreatesMissingDirectory(t *testing.T) {
+	// Use a nested path where the parent directory doesn't exist.
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "nested", "deep", "test.log")
+	l := New(logPath)
+	l.Log("test", map[string]any{"k": "v"})
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close() error: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("expected log file to exist after Log with missing dir: %v", err)
+	}
+	if !strings.Contains(string(data), "[afk] test k=v") {
+		t.Fatalf("log content %q missing expected event", string(data))
+	}
+}
+
 func TestSessionPathCreatesDir(t *testing.T) {
 	// Use a temp dir as the base to avoid polluting the real home dir.
 	tmpDir := t.TempDir()

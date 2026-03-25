@@ -54,3 +54,20 @@ func TestContextCancelledOnSIGINT(t *testing.T) {
 		t.Fatal("context was not cancelled after SIGINT")
 	}
 }
+
+func TestContextCancelledOnSIGTERM(t *testing.T) {
+	ctx, cancel := signal.NotifyContext(context.Background())
+	defer cancel()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+	}()
+
+	select {
+	case <-ctx.Done():
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("context was not cancelled after SIGTERM")
+	}
+}
