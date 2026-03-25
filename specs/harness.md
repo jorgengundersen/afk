@@ -2,17 +2,19 @@
 
 Wraps external agent CLIs behind a common contract. Domain code calls one
 function with a prompt and gets back an exit code. Everything CLI-specific
-lives inside the harness wrapper.
+lives inside the harness wrapper — including how agent output is presented
+to the user.
 
 ## What this adds
 
 ```
 $ afk -p "do the thing"
 # invokes: claude -p "do the thing"
+# streams agent activity to terminal
 # returns exit code from the subprocess
 
-$ afk -p "do the thing" --harness-args "--dangerously-skip-permissions --verbose"
-# invokes: claude -p "do the thing" --dangerously-skip-permissions --verbose
+$ afk -p "do the thing" --harness-args "--dangerously-skip-permissions"
+# invokes: claude -p "do the thing" --dangerously-skip-permissions
 # returns exit code
 
 $ afk -p "do the thing" --harness opencode
@@ -30,163 +32,131 @@ CLI is running underneath.
 ## Structure
 
 ```
-internal/harness/harness.go       # Runner interface, registry, implementations
-internal/harness/harness_test.go  # Tests (unit + integration where practical)
+internal/harness/harness.go           # Runner contract, registry, implementations
+internal/harness/harness_test.go      # Tests
+internal/harness/runcmd_unix.go       # Process group management (Unix)
+internal/harness/runcmd_other.go      # Fallback (non-Unix)
 ```
 
-## Domain contract
+## Contract
 
-```go
-// Runner executes an agent with the given prompt and returns its exit code.
-type Runner interface {
-    Run(ctx context.Context, prompt string) (exitCode int, err error)
-}
-```
+Package `harness` exposes a Runner contract: given a context and a prompt
+string, run the agent subprocess and return its exit code. An error means
+failure to launch (binary not found, permission denied). A non-zero exit
+code is NOT an error — it's a normal return value the loop uses to decide
+what to do.
 
-- `ctx` for cancellation (signal handling).
-- `exitCode` is the subprocess exit code (0 = success).
-- `err` is for failures to launch the process (binary not found, permission
-  denied). A non-zero exit code from the agent is NOT an error — it's a normal
-  return value the loop uses to decide what to do.
+A factory function returns the correct Runner for the given configuration
+(harness name, model, raw template, harness args). Unknown harness names
+produce an error.
 
-## Implementations
+A pre-flight check verifies the harness binary exists in PATH before the
+loop starts. This is a runtime/environment check, not a config constraint.
 
-### Claude
+### Behaviour rules
 
-Default harness. Invokes `claude` CLI in headless mode.
+| Given | Then |
+|-------|------|
+| harness="claude", model="" | Claude runner, no error |
+| harness="claude", model="sonnet" | Claude runner passes `--model sonnet` to subprocess |
+| harness="claude", harnessArgs="--dangerously-skip-permissions" | Args appended to subprocess command |
+| harness="opencode" | OpenCode runner, no error |
+| raw="my-agent {prompt}", prompt="hi" | Prompt is shell-escaped and substituted into template, executed via `sh -c` |
+| raw is set | harnessArgs is ignored |
+| Unknown harness name | Error: `unknown harness "<name>"` |
+| Binary not in PATH | Error: `harness "<name>": binary "<bin>" not found in PATH` |
+| Subprocess exits 0 | Return exitCode=0, err=nil |
+| Subprocess exits non-zero | Return the exit code, err=nil |
+| Binary cannot be started | Return err (not an exit code) |
+| Context cancelled while running | Subprocess is terminated, return context error |
 
-```
-claude -p "<prompt>" [--model <model>] [<harness-args>...]
-```
+## Agent output
 
-afk does not inject flags like `--dangerously-skip-permissions` by default.
-The harness runs the agent with its own applied configuration. Users pass
-additional flags explicitly via `--harness-args`.
+Each harness is responsible for showing the user what the agent is doing.
+The generic contract is: agent activity is rendered to the terminal during
+execution. What "rendered" means depends on the harness.
 
-If `Model` is set in config, add `--model <model>`.
+### Generic output model
 
-### OpenCode
+All harnesses present the same categories of information when available:
 
-Invokes `opencode` CLI in headless mode.
+| Category | What the user sees |
+|----------|--------------------|
+| Agent text | What the agent is saying or thinking, formatted for terminal readability |
+| Tool invocation | Tool name and key inputs (truncated for readability) |
+| Tool result | Output from the tool (truncated for readability) |
+| Iteration summary | Duration and cost (if the agent reports it) |
 
-```
-opencode -p "<prompt>" [--model <model>] [<harness-args>...]
-```
+Not all harnesses support all categories. When structured output is not
+available, the harness falls back to passing subprocess stdout/stderr
+directly to the terminal.
 
-If `Model` is set, add `--model <model>`.
+### Per-harness output
 
-### Raw
+**Claude** — requests structured JSON output from the CLI
+(`--output-format stream-json --verbose`). Parses the stream and renders
+each event as it arrives according to the generic model above. Stderr is
+inherited.
 
-Escape hatch. User provides a command template with `{prompt}` placeholder.
+**OpenCode** — inherits stdout/stderr directly. No structured output
+parsing (format not yet defined). Future work.
 
-```
---raw "my-agent {prompt}"
-```
+**Raw** — inherits stdout/stderr directly. No processing. The user's
+command is responsible for its own output.
 
-`{prompt}` is replaced with the shell-escaped prompt. The resulting string is
-executed via `sh -c`. Model flag is ignored (validated away by config).
+### Output behaviour rules
 
-## Registry
-
-```go
-// New returns a Runner for the given config.
-func New(harness string, model string, raw string, harnessArgs string) (Runner, error)
-```
-
-- If `raw` is set, return a Raw runner (harness/model already validated away).
-  `harnessArgs` is ignored for raw.
-- Otherwise, look up `harness` by name. Return error for unknown names.
-- `model` is passed through to the runner for harnesses that support it.
-- `harnessArgs` is split and appended to the subprocess command as additional
-  arguments. Passed through verbatim — no validation by afk.
-
-Known harness names: `"claude"`, `"opencode"`.
-
-Unknown name → `error: unknown harness "<name>"`.
-
-## Validation (pre-flight)
-
-The harness layer owns one validation check that config does not:
-
-```go
-// CheckBinary verifies the harness binary exists in PATH.
-func CheckBinary(harness string, raw string) error
-```
-
-- For named harnesses: look up the binary name, check `exec.LookPath`.
-- For raw: extract the first token from the template, check `exec.LookPath`.
-- Returns: `harness "<name>": binary "<bin>" not found in PATH`.
-
-This is called from main after config validation, before the loop starts.
-It is NOT part of `config.Validate` — binary existence is a runtime/environment
-check, not a config constraint.
-
-## Test cases
-
-### Unit tests
-
-| Test                       | Input                              | Expected                              |
-|----------------------------|------------------------------------|---------------------------------------|
-| new claude runner          | harness="claude", model=""         | Claude runner, no error               |
-| new claude with model      | harness="claude", model="sonnet"   | Claude runner with model set          |
-| new claude with args       | harness="claude", harnessArgs="--dangerously-skip-permissions" | args appended to command |
-| new opencode runner        | harness="opencode", model=""       | OpenCode runner, no error             |
-| new raw runner             | raw="my-agent {prompt}"            | Raw runner, no error                  |
-| unknown harness            | harness="nope"                     | error: unknown harness "nope"         |
-| raw prompt substitution    | raw="cmd {prompt}", prompt="hi"    | command becomes `cmd "hi"`            |
-| raw ignores harness args   | raw="cmd {prompt}", harnessArgs="--foo" | args ignored                    |
-
-### Integration tests
-
-Testing actual subprocess execution is inherently environment-dependent. Use
-a test helper script or `echo` as a stand-in binary:
-
-| Test                       | Setup                              | Expected                              |
-|----------------------------|------------------------------------|---------------------------------------|
-| run returns exit code 0    | harness wraps `true`               | exitCode=0, err=nil                   |
-| run returns exit code 1    | harness wraps `false`              | exitCode=1, err=nil                   |
-| binary not found           | harness wraps nonexistent binary   | exitCode=0, err=non-nil               |
-| context cancellation       | cancel ctx during run              | err=non-nil (context cancelled)       |
+| Given | Then |
+|-------|------|
+| Harness supports structured output | Agent activity is parsed and rendered per the generic model |
+| Agent text contains raw content (newlines, whitespace) | Text is formatted for human-readable terminal output |
+| Harness does not support structured output | Subprocess stdout/stderr are inherited by the terminal |
+| Structured stream contains an unknown event | Event is silently skipped |
+| Structured stream contains malformed JSON | Line is skipped, processing continues |
+| Context is cancelled mid-stream | Output processing stops promptly, partial output is fine |
 
 ## Process group management
 
-Agents like `claude` or `opencode` may spawn child processes of their own. Without
-process group isolation, context cancellation only kills the direct child —
-grandchildren become orphan processes. The harness must prevent this.
-
-### Behaviour rules
+Agents like `claude` or `opencode` may spawn child processes of their own.
+Without process group isolation, context cancellation only kills the direct
+child — grandchildren become orphan processes. The harness must prevent this.
 
 | Given | Then |
 |-------|------|
 | Any subprocess is started | It runs in its own process group (PGID = child PID) |
 | Context is cancelled while subprocess is running | SIGTERM is sent to the entire process group, not just the direct child |
 | Process group does not exit after SIGTERM within a grace period | SIGKILL is sent to the entire process group |
-| Subprocess exits normally (no cancellation) | No signal is sent; exit code is returned as today |
+| Subprocess exits normally (no cancellation) | No signal is sent; exit code is returned |
 | Subprocess has grandchildren when cancelled | All descendants in the process group are terminated |
-| Running on a non-POSIX platform | Process group management is unavailable; falls back to default os/exec behaviour |
+| Running on a non-POSIX platform | Falls back to default os/exec behaviour |
 
 ### What this does NOT do
 
+- Decide what flags the user passes via `--harness-args` (user's responsibility).
 - Windows process group management — POSIX-only for now.
 - Configurable grace period — use a sensible default.
 - Timeout / stuck detection independent of context cancellation (future work).
+- Parallel agent execution.
+- Buffer or aggregate output events — each event is rendered as it arrives.
+- Write agent output to the log file — logging is the logger's job.
+- Configurable truncation limits for output rendering.
 
 ## Out of scope
 
-- Timeout / stuck detection for agent subprocesses (future).
-- Capturing agent stdout/stderr (the agent writes to the terminal directly).
+- Timeout / stuck detection for agent subprocesses.
 - Parallel agent execution.
-- Validation of `--harness-args` content (user's responsibility).
-- Windows process group management (no `Setpgid` equivalent used yet).
+- Validation of `--harness-args` content.
+- Windows process group management.
+- Color/formatting configuration or TTY detection for output.
+- OpenCode structured output parsing (format not yet defined).
 
 ## Definition of done
 
-- `Runner` interface defined with `Run(ctx, prompt) (int, error)`.
+- Runner contract: given a context and prompt, run agent, return exit code.
 - Claude, OpenCode, and Raw implementations.
-- `New` factory returns correct runner or error for unknown harness.
-- `CheckBinary` verifies binary exists in PATH.
+- Factory returns correct runner or error for unknown harness.
+- Pre-flight binary check verifies binary exists in PATH.
 - Subprocesses run in their own process group; cancellation kills the entire group.
-- All test cases pass.
+- Claude harness renders structured agent activity to the terminal.
+- OpenCode and Raw harnesses pass stdout/stderr through to the terminal.
 - `go test ./internal/harness/...` passes.
-- Domain code (the loop, when it exists) depends only on `Runner`, never on
-  subprocess types directly.
