@@ -11,7 +11,7 @@ import (
 func TestLogSingleEvent(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("test", map[string]string{"k": "v"})
+	l.Log("test", map[string]any{"k": "v"})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestLogSingleEvent(t *testing.T) {
 func TestLogMultipleFieldsSorted(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("e", map[string]string{"b": "2", "a": "1"})
+	l.Log("e", map[string]any{"b": "2", "a": "1"})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestLogMultipleFieldsSorted(t *testing.T) {
 func TestLogValueWithSpacesQuoted(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("e", map[string]string{"msg": "hello world"})
+	l.Log("e", map[string]any{"msg": "hello world"})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestLogValueWithSpacesQuoted(t *testing.T) {
 func TestLogNoFields(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("ping", map[string]string{})
+	l.Log("ping", map[string]any{})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -92,8 +92,8 @@ func TestLogNoFields(t *testing.T) {
 func TestLogMultipleEventsAppended(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("first", map[string]string{"n": "1"})
-	l.Log("second", map[string]string{"n": "2"})
+	l.Log("first", map[string]any{"n": "1"})
+	l.Log("second", map[string]any{"n": "2"})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestLogMultipleEventsAppended(t *testing.T) {
 func TestCloseFlushes(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("flush-test", map[string]string{"ok": "true"})
+	l.Log("flush-test", map[string]any{"ok": "true"})
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -130,6 +130,26 @@ func TestCloseFlushes(t *testing.T) {
 
 	if !strings.Contains(string(data), "[afk] flush-test ok=true") {
 		t.Fatalf("expected event in file after close, got %q", string(data))
+	}
+}
+
+func TestLogAnyValueTypes(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	l := New(tmpFile)
+	l.Log("e", map[string]any{"count": 42, "name": "test"})
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close() error: %v", err)
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("reading log file: %v", err)
+	}
+
+	line := string(data)
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \[afk\] e count=42 name=test\n$`)
+	if !re.MatchString(line) {
+		t.Fatalf("log line %q does not match expected pattern", line)
 	}
 }
 

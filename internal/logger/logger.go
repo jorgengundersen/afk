@@ -23,7 +23,7 @@ func New(path string) *Logger {
 
 // Log writes a single event with the given name and fields.
 // Silent on failure — never returns error, never panics.
-func (l *Logger) Log(event string, fields map[string]string) {
+func (l *Logger) Log(event string, fields map[string]any) {
 	if l.file == nil {
 		dir := filepath.Dir(l.path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -48,7 +48,7 @@ func (l *Logger) Log(event string, fields map[string]string) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			v := fields[k]
+			v := fmt.Sprintf("%v", fields[k])
 			if strings.Contains(v, " ") {
 				v = fmt.Sprintf("%q", v)
 			}
