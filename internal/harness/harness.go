@@ -85,6 +85,30 @@ func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (i
 	return 0, err
 }
 
+// CheckBinary verifies the harness binary exists in PATH.
+func CheckBinary(harness, raw string) error {
+	if raw != "" {
+		bin := strings.Fields(raw)[0]
+		if _, err := exec.LookPath(bin); err != nil {
+			return fmt.Errorf("harness %q: binary %q not found in PATH", "raw", bin)
+		}
+		return nil
+	}
+	var bin string
+	switch harness {
+	case "claude":
+		bin = "claude"
+	case "opencode":
+		bin = "opencode"
+	default:
+		return fmt.Errorf("unknown harness %q", harness)
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return fmt.Errorf("harness %q: binary %q not found in PATH", harness, bin)
+	}
+	return nil
+}
+
 // New returns a Runner for the given config.
 func New(harness, model, raw, harnessArgs string) (Runner, error) {
 	if raw != "" {

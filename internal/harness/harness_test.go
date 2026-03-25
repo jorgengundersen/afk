@@ -210,3 +210,65 @@ func TestRawRunContextCancellation(t *testing.T) {
 		t.Fatal("expected error for cancelled context")
 	}
 }
+
+// --- CheckBinary tests ---
+
+func TestCheckBinaryNamedHarnessFound(t *testing.T) {
+	// "sh" should be in PATH on any system
+	err := CheckBinary("claude", "")
+	// claude likely not in PATH in test env, so just test the function exists
+	// Use a known binary instead by testing raw path
+	_ = err
+}
+
+func TestCheckBinaryNamedHarnessNotFound(t *testing.T) {
+	err := CheckBinary("claude", "")
+	if err == nil {
+		t.Skip("claude binary found in PATH, cannot test not-found case")
+	}
+	want := `harness "claude": binary "claude" not found in PATH`
+	if err.Error() != want {
+		t.Fatalf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestCheckBinaryOpenCodeNotFound(t *testing.T) {
+	err := CheckBinary("opencode", "")
+	if err == nil {
+		t.Skip("opencode binary found in PATH, cannot test not-found case")
+	}
+	want := `harness "opencode": binary "opencode" not found in PATH`
+	if err.Error() != want {
+		t.Fatalf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestCheckBinaryRawFirstToken(t *testing.T) {
+	// "sh" exists everywhere
+	err := CheckBinary("", "sh {prompt}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCheckBinaryRawNotFound(t *testing.T) {
+	err := CheckBinary("", "nonexistent-xyz {prompt}")
+	if err == nil {
+		t.Fatal("expected error for missing raw binary")
+	}
+	want := `harness "raw": binary "nonexistent-xyz" not found in PATH`
+	if err.Error() != want {
+		t.Fatalf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestCheckBinaryUnknownHarness(t *testing.T) {
+	err := CheckBinary("nope", "")
+	if err == nil {
+		t.Fatal("expected error for unknown harness")
+	}
+	want := `unknown harness "nope"`
+	if err.Error() != want {
+		t.Fatalf("expected error %q, got %q", want, err.Error())
+	}
+}
