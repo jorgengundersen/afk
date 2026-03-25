@@ -16,6 +16,24 @@ func build(t *testing.T) string {
 	return bin
 }
 
+func TestMissingPFlag(t *testing.T) {
+	bin := build(t)
+
+	cmd := exec.Command(bin)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 2 {
+		t.Fatalf("expected exit code 2, got %v", err)
+	}
+
+	if !strings.Contains(stderr.String(), "-p") {
+		t.Errorf("stderr = %q, want it to mention -p flag", stderr.String())
+	}
+}
+
 func TestPrintFlag(t *testing.T) {
 	bin := build(t)
 
