@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -45,15 +44,7 @@ func (r *Raw) Run(ctx context.Context, prompt string) (int, error) {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	err := cmd.Run()
-	if err == nil {
-		return 0, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), nil
-	}
-	return 0, err
+	return runCmd(ctx, cmd)
 }
 
 // agentArgs builds the argument list for a named harness invocation.
@@ -74,15 +65,7 @@ func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (i
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	err := cmd.Run()
-	if err == nil {
-		return 0, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), nil
-	}
-	return 0, err
+	return runCmd(ctx, cmd)
 }
 
 // CheckBinary verifies the harness binary exists in PATH.
