@@ -148,12 +148,36 @@ a test helper script or `echo` as a stand-in binary:
 | binary not found           | harness wraps nonexistent binary   | exitCode=0, err=non-nil               |
 | context cancellation       | cancel ctx during run              | err=non-nil (context cancelled)       |
 
+## Process group management
+
+Agents like `claude` or `opencode` may spawn child processes of their own. Without
+process group isolation, context cancellation only kills the direct child —
+grandchildren become orphan processes. The harness must prevent this.
+
+### Behaviour rules
+
+| Given | Then |
+|-------|------|
+| Any subprocess is started | It runs in its own process group (PGID = child PID) |
+| Context is cancelled while subprocess is running | SIGTERM is sent to the entire process group, not just the direct child |
+| Process group does not exit after SIGTERM within a grace period | SIGKILL is sent to the entire process group |
+| Subprocess exits normally (no cancellation) | No signal is sent; exit code is returned as today |
+| Subprocess has grandchildren when cancelled | All descendants in the process group are terminated |
+| Running on a non-POSIX platform | Process group management is unavailable; falls back to default os/exec behaviour |
+
+### What this does NOT do
+
+- Windows process group management — POSIX-only for now.
+- Configurable grace period — use a sensible default.
+- Timeout / stuck detection independent of context cancellation (future work).
+
 ## Out of scope
 
 - Timeout / stuck detection for agent subprocesses (future).
 - Capturing agent stdout/stderr (the agent writes to the terminal directly).
 - Parallel agent execution.
 - Validation of `--harness-args` content (user's responsibility).
+- Windows process group management (no `Setpgid` equivalent used yet).
 
 ## Definition of done
 
@@ -161,6 +185,7 @@ a test helper script or `echo` as a stand-in binary:
 - Claude, OpenCode, and Raw implementations.
 - `New` factory returns correct runner or error for unknown harness.
 - `CheckBinary` verifies binary exists in PATH.
+- Subprocesses run in their own process group; cancellation kills the entire group.
 - All test cases pass.
 - `go test ./internal/harness/...` passes.
 - Domain code (the loop, when it exists) depends only on `Runner`, never on

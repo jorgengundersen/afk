@@ -63,7 +63,7 @@ These are integration-style tests.
 - Timeout on graceful shutdown (if the harness hangs, the user sends another
   signal or kills the process).
 - Signal forwarding to child processes (the harness owns its subprocess
-  lifecycle).
+  lifecycle — see "Process group management" in harness spec).
 
 ## Definition of done
 
