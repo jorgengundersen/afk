@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Skills**: agent skills for epic creation (`create-epic`), bug filing (`file-bug`), and human handoff (`needs-human`).
+- **Docs**: beads workflow documentation (`docs/beads-workflows.md`).
+- **Specs**: new project specs — `afk-overview.md`, `design-principles.md`, `skeleton.md`.
+
+### Removed
+
+- **Go implementation**: removed legacy Go codebase (`cmd/`, `internal/`, `e2e/`), old specs, and related docs pending rewrite.
+
+### Changed
+
+- **gitignore**: added `tmp/` and beads credential key exclusions.
+
 ## [1.2.0] - 2026-03-20
 
 ### Added
