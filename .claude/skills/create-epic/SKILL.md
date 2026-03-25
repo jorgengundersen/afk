@@ -53,6 +53,7 @@ a single testable behaviour so TDD applies naturally.
 - What to build (the behaviour/contract)
 - Why it exists (how it fits in the larger picture)
 - Constraints (design decisions, boundaries, what's in/out of scope)
+- Spec reference (e.g. `spec: specs/output.md`) so the implementation agent knows where to find context
 
 **Task descriptions should NOT prescribe:**
 - Specific test cases

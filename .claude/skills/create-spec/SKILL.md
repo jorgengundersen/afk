@@ -35,8 +35,12 @@ This is the "demo" someone would run to verify it works.>
 
 ## Contract
 
-<Function signatures, types, interfaces. This is the API surface other modules
-depend on. Use Go code blocks for signatures.>
+<Describe the public boundary in terms of behaviour and capabilities — what
+this module accepts, returns, and guarantees. Name the package and its public
+surface conceptually. Do NOT use language-specific code blocks for signatures;
+the implementation agent owns concrete types, names, and function signatures.
+Use code signatures only when another spec already references a specific type
+and changing it would break a cross-module contract.>
 
 ### Behaviour rules
 
@@ -66,10 +70,11 @@ points. Prefer "X passes" or "X produces Y" over vague statements.>
 
 ## Principles
 
-**Own the contract, not the implementation.** Signatures and behaviour rules
-are spec territory. Pseudocode, test tables, and implementation steps are not.
-The implementing agent has TDD discipline and the codebase — let them decide
-how to build and test.
+**Own the contract, not the implementation.** Behaviour rules and capabilities
+are spec territory. Concrete function signatures, type names, and code blocks
+are not — the implementing agent owns those. Pseudocode, test tables, and
+implementation steps are also out of scope. The implementing agent has TDD
+discipline and the codebase — let them decide how to build and test.
 
 **No caller wiring.** A spec describes its own module. How main.go or other
 modules use it is their concern. "What main.go becomes" sections leak
