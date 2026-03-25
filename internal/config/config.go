@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"io"
 	"time"
@@ -48,4 +49,17 @@ func ParseFlags(args []string) (Config, error) {
 	})
 
 	return cfg, nil
+}
+
+func Validate(cfg Config) error {
+	if cfg.Raw != "" && (cfg.HarnessSet || cfg.Model != "") {
+		return errors.New("--raw cannot be combined with --harness or --model")
+	}
+	if cfg.SleepSet && !cfg.Daemon {
+		return errors.New("--sleep requires daemon mode (-d)")
+	}
+	if cfg.Prompt == "" && !cfg.Beads {
+		return errors.New("no prompt provided and beads not active; nothing to do")
+	}
+	return nil
 }

@@ -13,8 +13,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
-	if cfg.Prompt == "" {
-		fmt.Fprintln(os.Stderr, "error: -p flag is required")
+	if err := config.Validate(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
 	fmt.Println(cfg.Prompt)

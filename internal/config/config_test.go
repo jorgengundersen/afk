@@ -97,6 +97,68 @@ func TestParseFlags_BadType(t *testing.T) {
 	}
 }
 
+func TestValidate_ValidWithPrompt(t *testing.T) {
+	cfg := Config{Prompt: "x"}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_SleepWithoutDaemon(t *testing.T) {
+	cfg := Config{Prompt: "x", SleepSet: true}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for --sleep without -d")
+	}
+	want := "--sleep requires daemon mode (-d)"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_RawWithModel(t *testing.T) {
+	cfg := Config{Raw: "cmd", Model: "gpt-4", Prompt: "x"}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for --raw with --model")
+	}
+	want := "--raw cannot be combined with --harness or --model"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_RawWithHarness(t *testing.T) {
+	cfg := Config{Raw: "cmd", HarnessSet: true, Prompt: "x"}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for --raw with --harness")
+	}
+	want := "--raw cannot be combined with --harness or --model"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_NoPromptNoBeads(t *testing.T) {
+	cfg := Config{}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for no prompt and no beads")
+	}
+	want := "no prompt provided and beads not active; nothing to do"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_ValidWithBeads(t *testing.T) {
+	cfg := Config{Beads: true}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseFlags_SetFlags_NotSetByDefault(t *testing.T) {
 	cfg, err := ParseFlags([]string{"-p", "hi"})
 	if err != nil {
