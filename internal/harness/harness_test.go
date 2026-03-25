@@ -163,3 +163,50 @@ func TestRunAgentContextCancellation(t *testing.T) {
 		t.Fatal("expected error for cancelled context")
 	}
 }
+
+// --- Raw.Run tests ---
+
+func TestRawRunSubstitutesPrompt(t *testing.T) {
+	r := &Raw{template: "echo {prompt}"}
+	exitCode, err := r.Run(context.Background(), "hello world")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+}
+
+func TestRawRunExitCode1(t *testing.T) {
+	r := &Raw{template: "exit 1"}
+	exitCode, err := r.Run(context.Background(), "ignored")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
+	}
+}
+
+func TestRawRunShellEscapesPrompt(t *testing.T) {
+	// Prompt with shell metacharacters should not cause injection
+	r := &Raw{template: "echo {prompt}"}
+	exitCode, err := r.Run(context.Background(), "hello; exit 1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("prompt with semicolon should be escaped, got exit code %d", exitCode)
+	}
+}
+
+func TestRawRunContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := &Raw{template: "sleep 10"}
+	_, err := r.Run(ctx, "ignored")
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}

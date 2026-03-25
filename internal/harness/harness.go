@@ -39,7 +39,21 @@ type Raw struct {
 }
 
 func (r *Raw) Run(ctx context.Context, prompt string) (int, error) {
-	panic("not implemented")
+	escaped := "'" + strings.ReplaceAll(prompt, "'", "'\"'\"'") + "'"
+	cmdStr := strings.ReplaceAll(r.template, "{prompt}", escaped)
+	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	err := cmd.Run()
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
+	}
+	return 0, err
 }
 
 // agentArgs builds the argument list for a named harness invocation.
@@ -55,10 +69,7 @@ func agentArgs(prompt, model, harnessArgs string) []string {
 }
 
 func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (int, error) {
-	return execCmd(ctx, binary, agentArgs(prompt, model, harnessArgs))
-}
-
-func execCmd(ctx context.Context, binary string, args []string) (int, error) {
+	args := agentArgs(prompt, model, harnessArgs)
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdin = nil
 	cmd.Stdout = nil
