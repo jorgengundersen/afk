@@ -262,6 +262,17 @@ func TestCheckBinaryRawNotFound(t *testing.T) {
 	}
 }
 
+func TestCheckBinaryRawWhitespaceOnly(t *testing.T) {
+	err := CheckBinary("", "   ")
+	if err == nil {
+		t.Fatal("expected error for whitespace-only raw value")
+	}
+	want := `harness "raw": empty command template`
+	if err.Error() != want {
+		t.Fatalf("expected error %q, got %q", want, err.Error())
+	}
+}
+
 func TestCheckBinaryUnknownHarness(t *testing.T) {
 	err := CheckBinary("nope", "")
 	if err == nil {

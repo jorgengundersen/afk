@@ -88,7 +88,11 @@ func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (i
 // CheckBinary verifies the harness binary exists in PATH.
 func CheckBinary(harness, raw string) error {
 	if raw != "" {
-		bin := strings.Fields(raw)[0]
+		fields := strings.Fields(raw)
+		if len(fields) == 0 {
+			return fmt.Errorf("harness %q: empty command template", "raw")
+		}
+		bin := fields[0]
 		if _, err := exec.LookPath(bin); err != nil {
 			return fmt.Errorf("harness %q: binary %q not found in PATH", "raw", bin)
 		}
