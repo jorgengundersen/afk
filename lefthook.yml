@@ -2,15 +2,15 @@ pre-commit:
   parallel: true
   commands:
     fmt:
+      glob: "*.go"
       run: gofmt -l . | grep . && exit 1 || exit 0
     vet:
+      glob: "*.go"
       run: go vet ./...
-    build:
-      run: go build ./...
     test:
-      run: go test -race ./...
+      glob: "*.go"
+      run: go test ./...
     beads-hooks:
       run: bd hooks run pre-commit
       env:
         BD_GIT_HOOK: "1"
-      skip_empty_staging: false

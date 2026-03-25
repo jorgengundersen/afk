@@ -37,3 +37,6 @@ go.work.sum
 *.db
 
 tmp/
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key
