@@ -43,8 +43,9 @@ type Config struct {
     Sleep    time.Duration
     Harness  string
     Model    string
-    Raw      string
-    Beads    bool
+    Raw         string
+    HarnessArgs string
+    Beads       bool
 }
 ```
 

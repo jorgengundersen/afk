@@ -48,9 +48,12 @@ contract: given a prompt string, run the agent and return an exit code.
 
 | Harness     | Binary     | Notes                                                        |
 |-------------|------------|--------------------------------------------------------------|
-| Claude Code | `claude`   | Default. Runs headless with `--dangerously-skip-permissions` |
+| Claude Code | `claude`   | Default. Runs with the agent's own applied configuration     |
 | OpenCode    | `opencode` | Headless mode                                                |
 | Raw         | any        | Escape hatch: `--raw "cmd {prompt}"` — `{prompt}` is substituted |
+
+afk does not inject flags into the harness by default. Additional flags can be
+passed through to the harness CLI via `--harness-args` (ignored for `--raw`).
 
 `--raw` is mutually exclusive with `--harness` and `--model`.
 
@@ -65,6 +68,7 @@ contract: given a prompt string, run the agent and return an exit code.
 | `--harness` | string   | claude  | Which agent to use                      |
 | `--model`   | string   | —       | Model override passed to harness        |
 | `--raw`     | string   | —       | Raw command with `{prompt}` placeholder |
+| `--harness-args` | string | —  | Additional flags passed through to harness CLI |
 | `--beads`   | bool     | false   | Pull work from bd                       |
 
 ## Behavior
