@@ -34,6 +34,9 @@ func TestParseFlags_Defaults(t *testing.T) {
 	if cfg.Beads {
 		t.Error("Beads should be false by default")
 	}
+	if cfg.HarnessArgs != "" {
+		t.Errorf("HarnessArgs = %q, want empty", cfg.HarnessArgs)
+	}
 }
 
 func TestParseFlags_AllFlags(t *testing.T) {
@@ -45,6 +48,7 @@ func TestParseFlags_AllFlags(t *testing.T) {
 		"--harness", "aider",
 		"--model", "gpt-4",
 		"--raw", "my-agent {prompt}",
+		"--harness-args", "--dangerously-skip-permissions --verbose",
 		"--beads",
 	}
 	cfg, err := ParseFlags(args)
@@ -71,6 +75,9 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	}
 	if cfg.Raw != "my-agent {prompt}" {
 		t.Errorf("Raw = %q, want %q", cfg.Raw, "my-agent {prompt}")
+	}
+	if cfg.HarnessArgs != "--dangerously-skip-permissions --verbose" {
+		t.Errorf("HarnessArgs = %q, want %q", cfg.HarnessArgs, "--dangerously-skip-permissions --verbose")
 	}
 	if !cfg.Beads {
 		t.Error("Beads should be true")

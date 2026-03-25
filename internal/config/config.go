@@ -8,14 +8,15 @@ import (
 )
 
 type Config struct {
-	Prompt  string
-	MaxIter int
-	Daemon  bool
-	Sleep   time.Duration
-	Harness string
-	Model   string
-	Raw     string
-	Beads   bool
+	Prompt      string
+	MaxIter     int
+	Daemon      bool
+	Sleep       time.Duration
+	Harness     string
+	Model       string
+	Raw         string
+	HarnessArgs string
+	Beads       bool
 
 	HarnessSet bool
 	SleepSet   bool
@@ -33,6 +34,7 @@ func ParseFlags(args []string) (Config, error) {
 	fs.StringVar(&cfg.Harness, "harness", "claude", "harness to use")
 	fs.StringVar(&cfg.Model, "model", "", "model override")
 	fs.StringVar(&cfg.Raw, "raw", "", "raw command template")
+	fs.StringVar(&cfg.HarnessArgs, "harness-args", "", "extra arguments for the harness subprocess")
 	fs.BoolVar(&cfg.Beads, "beads", false, "use beads for issue tracking")
 
 	if err := fs.Parse(args); err != nil {
