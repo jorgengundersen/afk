@@ -153,6 +153,41 @@ func TestLogAnyValueTypes(t *testing.T) {
 	}
 }
 
+func TestLogAfterCloseIsNoop(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	l := New(tmpFile)
+	l.Log("before", map[string]any{"n": "1"})
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close() error: %v", err)
+	}
+
+	// Remove the log file so we can detect if Log re-opens it.
+	os.Remove(tmpFile)
+
+	// Log after Close should silently do nothing — no re-open, no write.
+	l.Log("after-close", map[string]any{"n": "2"})
+
+	// File should NOT be recreated.
+	if _, err := os.Stat(tmpFile); err == nil {
+		t.Fatalf("expected log file to not exist after close, but it was recreated")
+	}
+}
+
+func TestDoubleCloseReturnsNil(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	l := New(tmpFile)
+	l.Log("event", map[string]any{"k": "v"})
+
+	if err := l.Close(); err != nil {
+		t.Fatalf("first Close() error: %v", err)
+	}
+
+	// Second Close should return nil, not attempt to close an already-closed fd.
+	if err := l.Close(); err != nil {
+		t.Fatalf("second Close() returned error: %v", err)
+	}
+}
+
 func TestSessionPathCreatesDir(t *testing.T) {
 	// Use a temp dir as the base to avoid polluting the real home dir.
 	tmpDir := t.TempDir()

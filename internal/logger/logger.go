@@ -11,8 +11,9 @@ import (
 
 // Logger writes structured events to a log file.
 type Logger struct {
-	path string
-	file *os.File
+	path   string
+	file   *os.File
+	closed bool
 }
 
 // New creates a logger that writes to the given path.
@@ -24,6 +25,9 @@ func New(path string) *Logger {
 // Log writes a single event with the given name and fields.
 // Silent on failure — never returns error, never panics.
 func (l *Logger) Log(event string, fields map[string]any) {
+	if l.closed {
+		return
+	}
 	if l.file == nil {
 		dir := filepath.Dir(l.path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -68,7 +72,10 @@ func (l *Logger) Close() error {
 	if l.file == nil {
 		return nil
 	}
-	return l.file.Close()
+	err := l.file.Close()
+	l.file = nil
+	l.closed = true
+	return err
 }
 
 // SessionPath returns the log file path for a new session.
