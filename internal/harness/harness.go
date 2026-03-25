@@ -55,7 +55,10 @@ func agentArgs(prompt, model, harnessArgs string) []string {
 }
 
 func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (int, error) {
-	args := agentArgs(prompt, model, harnessArgs)
+	return execCmd(ctx, binary, agentArgs(prompt, model, harnessArgs))
+}
+
+func execCmd(ctx context.Context, binary string, args []string) (int, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdin = nil
 	cmd.Stdout = nil
