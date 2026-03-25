@@ -2,7 +2,10 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
+	"strings"
 )
 
 // Runner executes an agent with the given prompt and returns its exit code.
@@ -17,7 +20,7 @@ type Claude struct {
 }
 
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
-	panic("not implemented")
+	return runAgent(ctx, "claude", prompt, c.model, c.harnessArgs)
 }
 
 // OpenCode invokes the opencode CLI in headless mode.
@@ -27,7 +30,7 @@ type OpenCode struct {
 }
 
 func (o *OpenCode) Run(ctx context.Context, prompt string) (int, error) {
-	panic("not implemented")
+	return runAgent(ctx, "opencode", prompt, o.model, o.harnessArgs)
 }
 
 // Raw executes a user-provided command template via sh -c.
@@ -37,6 +40,35 @@ type Raw struct {
 
 func (r *Raw) Run(ctx context.Context, prompt string) (int, error) {
 	panic("not implemented")
+}
+
+// agentArgs builds the argument list for a named harness invocation.
+func agentArgs(prompt, model, harnessArgs string) []string {
+	args := []string{"-p", prompt}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if harnessArgs != "" {
+		args = append(args, strings.Fields(harnessArgs)...)
+	}
+	return args
+}
+
+func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (int, error) {
+	args := agentArgs(prompt, model, harnessArgs)
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	err := cmd.Run()
+	if err == nil {
+		return 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), nil
+	}
+	return 0, err
 }
 
 // New returns a Runner for the given config.
