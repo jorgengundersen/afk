@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# claude-verbose — Run Claude Code headless with human-readable verbose output
+# Usage: ./claude-verbose "your prompt here"
+#        echo "your prompt" | ./claude-verbose
+#
+# Shows: assistant text, tool calls (name + inputs), and tool results
+# Requires: claude, jq
+
+set -euo pipefail
+
+# Colors
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+DIM='\033[2m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Grab prompt from arg or stdin
+if [[ $# -gt 0 ]]; then
+    prompt="$*"
+elif [[ ! -t 0 ]]; then
+    prompt="$(cat)"
+else
+    echo "Usage: $0 \"your prompt here\""
+    echo "       echo \"prompt\" | $0"
+    exit 1
+fi
+
+claude -p "$prompt" \
+    --output-format stream-json \
+    --verbose \
+    | jq -r --unbuffered '
+    # Assistant messages — show text and tool calls
+    if .type == "assistant" then
+        (.message.content[]? |
+            if .type == "text" then
+                "\u001b[1m" + .text + "\u001b[0m"
+            elif .type == "tool_use" then
+                "\n\u001b[0;36m⚙ " + .name + "\u001b[0m\n\u001b[2m" +
+                (.input | to_entries | map("  " + .key + ": " + (.value | tostring | if length > 200 then .[:200] + "…" else . end)) | join("\n")) +
+                "\u001b[0m"
+            else empty
+            end
+        ) // empty
+
+    # Tool results
+    elif .type == "tool_result" then
+        (.message.content[]? |
+            if .type == "tool_result" then
+                "\u001b[0;33m↳ " +
+                (if (.content | length) > 300 then (.content[:300] + "…") else .content end) +
+                "\u001b[0m\n"
+            else empty
+            end
+        ) // empty
+
+    # Final result summary
+    elif .type == "result" then
+        "\n\u001b[0;32m✓ Done (" + (.duration_ms / 1000 | tostring | split(".") | .[0]) + "s, $" + (.total_cost_usd | tostring) + ")\u001b[0m"
+
+    else empty
+    end
+'

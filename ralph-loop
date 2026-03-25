@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+while :; do
+  ready=$(bd ready --json 2>/dev/null || echo "[]")
+  if [ "$ready" = "[]" ] || [ -z "$ready" ]; then
+    echo "No ready work. Sleeping 60s..."
+    sleep 60
+    continue
+  fi
+
+  cat PROMPT.md | ./claude-verbose
+done
