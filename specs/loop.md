@@ -29,14 +29,36 @@ internal/loop/loop_test.go  # Tests
 ## Run
 
 ```go
-func Run(ctx context.Context, cfg config.Config, runner harness.Runner, logger *logger.Logger) (int, error)
+// Config holds the parameters the loop needs to run.
+type Config struct {
+    MaxIter int
+    Daemon  bool
+    Sleep   time.Duration
+    Prompt  string
+}
+
+// Logger is the interface the loop uses to record events.
+type Logger interface {
+    Log(event string, fields map[string]any)
+}
+
+// Runner executes an agent with the given prompt.
+type Runner interface {
+    Run(ctx context.Context, prompt string) (int, error)
+}
+
+func Run(ctx context.Context, cfg Config, runner Runner, logger Logger) (int, error)
 ```
 
 - `ctx` carries cancellation (from signal handling, tested via context).
 - `cfg` provides MaxIter, Daemon, Sleep, and Prompt.
-- `runner` is the harness Runner interface — the loop calls `Run(ctx, prompt)`.
-- `logger` records events — the loop calls `Log(event, fields)`.
+- `runner` satisfies the local `Runner` interface — the loop calls `Run(ctx, prompt)`.
+- `logger` satisfies the local `Logger` interface — the loop calls `Log(event, fields)`.
 - Returns an exit code and an optional error.
+
+The loop defines its own `Config`, `Runner`, and `Logger` types rather than importing
+concrete types from other packages. This decouples the loop from the config, harness,
+and logger packages and enables testability via dependency injection.
 
 The loop does NOT call ParseFlags, Validate, Assemble, or New. Those are
 called by main before the loop starts. The loop receives ready-to-use
@@ -47,7 +69,7 @@ dependencies.
 ### Max-iterations mode (default)
 
 ```
-log session-start
+log session-start {mode: "max-iterations", maxIter: MaxIter}
 for i := 1; i <= MaxIter; i++ {
     log iteration-start
     exitCode, err := runner.Run(ctx, prompt)
@@ -70,7 +92,7 @@ return 0
 ### Daemon mode
 
 ```
-log session-start
+log session-start {mode: "daemon", maxIter: MaxIter}
 for {
     log iteration-start
     exitCode, err := runner.Run(ctx, prompt)
@@ -88,6 +110,7 @@ return 0
 ```
 
 - Runs indefinitely until context is cancelled.
+- All iterations use a fixed iteration number of 0 (no incrementing counter).
 - Sleeps between iterations for `cfg.Sleep` duration.
 - Sleep must be interruptible — if ctx is cancelled during sleep, wake
   immediately and exit.
@@ -125,7 +148,7 @@ Logger writing to a temp file. No real subprocesses in loop tests.
 ### Log verification
 
 Tests should read the temp log file and verify:
-- `session-start` is the first event with correct mode/harness fields.
+- `session-start` is the first event with correct `mode` and `maxIter` fields.
 - `iteration-start` and `iteration-end` bracket each iteration.
 - `session-end` is the last event with correct reason.
 - `error` events appear when runner returns err.
