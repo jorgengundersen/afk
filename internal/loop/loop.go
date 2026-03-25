@@ -3,9 +3,15 @@ package loop
 import (
 	"context"
 	"time"
-
-	"github.com/jorgengundersen/afk/internal/config"
 )
+
+// Config holds the parameters the loop needs to run.
+type Config struct {
+	MaxIter int
+	Daemon  bool
+	Sleep   time.Duration
+	Prompt  string
+}
 
 // Logger is the interface the loop uses to record events.
 type Logger interface {
@@ -18,7 +24,7 @@ type Runner interface {
 }
 
 // Run orchestrates harness invocations in a loop.
-func Run(ctx context.Context, cfg config.Config, runner Runner, logger Logger) (int, error) {
+func Run(ctx context.Context, cfg Config, runner Runner, logger Logger) (int, error) {
 	logger.Log("session-start", map[string]any{
 		"mode":    mode(cfg),
 		"maxIter": cfg.MaxIter,
@@ -30,7 +36,7 @@ func Run(ctx context.Context, cfg config.Config, runner Runner, logger Logger) (
 	return runMaxIter(ctx, cfg, runner, logger)
 }
 
-func runMaxIter(ctx context.Context, cfg config.Config, runner Runner, logger Logger) (int, error) {
+func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger) (int, error) {
 	allFailed := true
 	iterations := 0
 
@@ -62,7 +68,7 @@ func runMaxIter(ctx context.Context, cfg config.Config, runner Runner, logger Lo
 	return 0, nil
 }
 
-func runDaemon(ctx context.Context, cfg config.Config, runner Runner, logger Logger) (int, error) {
+func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger) (int, error) {
 	for {
 		if ctx.Err() != nil {
 			break
@@ -105,7 +111,7 @@ func runIteration(ctx context.Context, iteration int, prompt string, runner Runn
 	return exitCode, err
 }
 
-func mode(cfg config.Config) string {
+func mode(cfg Config) string {
 	if cfg.Daemon {
 		return "daemon"
 	}

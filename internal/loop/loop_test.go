@@ -6,8 +6,6 @@ import (
 	"slices"
 	"testing"
 	"time"
-
-	"github.com/jorgengundersen/afk/internal/config"
 )
 
 // fakeRunner records calls and returns preconfigured results.
@@ -58,7 +56,7 @@ func (s *spyLogger) eventNames() []string {
 func TestSingleIteration(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 0, err: nil}}}
 	logger := &spyLogger{}
-	cfg := config.Config{
+	cfg := Config{
 		MaxIter: 1,
 		Prompt:  "test prompt",
 	}
@@ -98,7 +96,7 @@ func TestSingleIteration(t *testing.T) {
 func TestMultipleIterations(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 3, Prompt: "p"}
+	cfg := Config{MaxIter: 3, Prompt: "p"}
 
 	exitCode, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -115,7 +113,7 @@ func TestMultipleIterations(t *testing.T) {
 func TestNonZeroExitContinues(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 1}, {exitCode: 0}}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 2, Prompt: "p"}
+	cfg := Config{MaxIter: 2, Prompt: "p"}
 
 	exitCode, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -135,7 +133,7 @@ func TestLaunchFailureContinues(t *testing.T) {
 		{exitCode: 0, err: errors.New("launch failed")},
 	}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 2, Prompt: "p"}
+	cfg := Config{MaxIter: 2, Prompt: "p"}
 
 	_, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -162,7 +160,7 @@ func TestAllLaunchFailuresExitOne(t *testing.T) {
 		{exitCode: 0, err: errors.New("fail")},
 	}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 2, Prompt: "p"}
+	cfg := Config{MaxIter: 2, Prompt: "p"}
 
 	exitCode, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -185,7 +183,7 @@ func TestContextCancellationMidLoop(t *testing.T) {
 		calls:       &callCount,
 	}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 10, Prompt: "p"}
+	cfg := Config{MaxIter: 10, Prompt: "p"}
 
 	exitCode, err := Run(ctx, cfg, cancellingRunner, logger)
 	if err != nil {
@@ -224,7 +222,7 @@ func (c *cancellingFakeRunner) Run(ctx context.Context, prompt string) (int, err
 func TestIterationEventsBracketEachIteration(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 3, Prompt: "p"}
+	cfg := Config{MaxIter: 3, Prompt: "p"}
 
 	_, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -248,7 +246,7 @@ func TestIterationEventsBracketEachIteration(t *testing.T) {
 func TestIterationEndContainsExitCodeAndDuration(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 42}}}
 	logger := &spyLogger{}
-	cfg := config.Config{MaxIter: 1, Prompt: "p"}
+	cfg := Config{MaxIter: 1, Prompt: "p"}
 
 	_, err := Run(context.Background(), cfg, runner, logger)
 	if err != nil {
@@ -288,7 +286,7 @@ func TestDaemonWakingEventLogged(t *testing.T) {
 		calls:       &callCount,
 	}
 	logger := &spyLogger{}
-	cfg := config.Config{
+	cfg := Config{
 		Daemon:  true,
 		Sleep:   10 * time.Millisecond,
 		Prompt:  "p",
@@ -317,7 +315,7 @@ func TestDaemonSleepsBetweenIterations(t *testing.T) {
 		calls:       &callCount,
 	}
 	logger := &spyLogger{}
-	cfg := config.Config{
+	cfg := Config{
 		Daemon:  true,
 		Sleep:   10 * time.Millisecond,
 		Prompt:  "p",
@@ -345,7 +343,7 @@ func TestDaemonSleepInterrupted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
 	logger := &spyLogger{}
-	cfg := config.Config{
+	cfg := Config{
 		Daemon:  true,
 		Sleep:   10 * time.Second, // long sleep
 		Prompt:  "p",
