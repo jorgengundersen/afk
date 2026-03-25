@@ -29,8 +29,8 @@ func TestMissingPFlag(t *testing.T) {
 		t.Fatalf("expected exit code 2, got %v", err)
 	}
 
-	if !strings.Contains(stderr.String(), "-p") {
-		t.Errorf("stderr = %q, want it to mention -p flag", stderr.String())
+	if !strings.Contains(stderr.String(), "no prompt") {
+		t.Errorf("stderr = %q, want it to mention missing prompt", stderr.String())
 	}
 }
 
