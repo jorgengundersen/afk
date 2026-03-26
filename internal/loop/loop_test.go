@@ -171,6 +171,22 @@ func TestAllLaunchFailuresExitOne(t *testing.T) {
 	}
 }
 
+func TestAllNonZeroExitCodesExitOne(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{
+		{exitCode: 1, err: nil},
+	}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 3, Prompt: "p"}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1 when all iterations have non-zero exit, got %d", exitCode)
+	}
+}
+
 func TestContextCancellationMidLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	callCount := 0

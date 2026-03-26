@@ -62,11 +62,10 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 
 		iterations++
 		exitCode, err := runIteration(ctx, i, prompt, issueID, issueTitle, runner, logger)
-		_ = exitCode
 
 		if err != nil {
 			logger.Log("error", map[string]any{"iteration": i, "err": err.Error()})
-		} else {
+		} else if exitCode == 0 {
 			allFailed = false
 		}
 	}
