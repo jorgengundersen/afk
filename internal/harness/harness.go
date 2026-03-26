@@ -46,6 +46,8 @@ func (c *Claude) renderOutput(ctx context.Context) {
 }
 
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
+	c.pr, c.pw = io.Pipe()
+
 	cmd := c.buildCmd(ctx, prompt)
 
 	done := make(chan struct{})
@@ -145,8 +147,7 @@ func New(harness, model, raw, harnessArgs string) (Runner, error) {
 	}
 	switch harness {
 	case "claude":
-		pr, pw := io.Pipe()
-		return &Claude{model: model, harnessArgs: harnessArgs, pr: pr, pw: pw}, nil
+		return &Claude{model: model, harnessArgs: harnessArgs}, nil
 	case "opencode":
 		return &OpenCode{model: model, harnessArgs: harnessArgs}, nil
 	default:

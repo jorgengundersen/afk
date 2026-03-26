@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -13,6 +14,48 @@ import (
 	"testing"
 	"time"
 )
+
+// TestClaudeRunMultipleIterations verifies that Run() can be called more than
+// once on the same Claude instance. Before the fix, the second call wrote to a
+// closed pipe and silently lost all subprocess output.
+func TestClaudeRunMultipleIterations(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "claude")
+	script := `#!/bin/sh
+echo '{"type":"result","cost_usd":0,"duration_ms":0,"result":"ok","is_error":false}'
+`
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	var buf bytes.Buffer
+	r, err := New("claude", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := r.(*Claude)
+	c.output = &buf
+
+	// First run should succeed.
+	code, err := c.Run(context.Background(), "test1")
+	if err != nil {
+		t.Fatalf("first run error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("first run exit code: %d", code)
+	}
+
+	// Second run must also succeed — this is the bug.
+	buf.Reset()
+	code, err = c.Run(context.Background(), "test2")
+	if err != nil {
+		t.Fatalf("second run error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("second run exit code: %d", code)
+	}
+}
 
 // TestRunCmdContextCancelReturnsContextCanceled verifies that runCmd's
 // process group cleanup path returns context.Canceled on cancellation.
