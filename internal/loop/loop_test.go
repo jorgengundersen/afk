@@ -411,16 +411,17 @@ type workItem struct {
 	id      string
 	title   string
 	hasWork bool
+	err     error
 }
 
-func (f *fakeWorkSource) Next() (prompt string, issueID string, issueTitle string, ok bool) {
+func (f *fakeWorkSource) Next() (prompt string, issueID string, issueTitle string, ok bool, err error) {
 	idx := f.calls
 	f.calls++
 	if idx < len(f.items) {
 		w := f.items[idx]
-		return w.prompt, w.id, w.title, w.hasWork
+		return w.prompt, w.id, w.title, w.hasWork, w.err
 	}
-	return "", "", "", false
+	return "", "", "", false, nil
 }
 
 func TestWorkSource_UsesReturnedPrompt(t *testing.T) {
@@ -560,6 +561,89 @@ func TestWorkSource_IterationLogsIncludeIssueInfo(t *testing.T) {
 				t.Errorf("iteration-end issueTitle = %v, want Fix bug", e.fields["issueTitle"])
 			}
 		}
+	}
+}
+
+func TestWorkSource_ErrorExitsNonZeroMaxIter(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 5, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{err: errors.New("bd: connection refused")},
+	}}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
+	}
+	if runner.calls != 0 {
+		t.Errorf("expected 0 runner calls, got %d", runner.calls)
+	}
+	// Should log work-source-error
+	found := false
+	for _, e := range logger.events {
+		if e.event == "work-source-error" {
+			found = true
+			if e.fields["err"] != "bd: connection refused" {
+				t.Errorf("expected error message in log, got %v", e.fields["err"])
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected work-source-error event, got events: %v", logger.eventNames())
+	}
+	// Session-end reason should be work-source-error
+	lastEvent := logger.events[len(logger.events)-1]
+	if lastEvent.fields["reason"] != "work-source-error" {
+		t.Errorf("expected reason=work-source-error, got %v", lastEvent.fields["reason"])
+	}
+}
+
+func TestWorkSource_ErrorDaemonRetriesAfterSleep(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 20, Daemon: true, Sleep: 10 * time.Millisecond, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{err: errors.New("bd: timeout")},
+		{prompt: "work", id: "afk-1", title: "Fix", hasWork: true},
+	}}
+
+	// Cancel after the runner gets called once
+	go func() {
+		for {
+			time.Sleep(5 * time.Millisecond)
+			if runner.calls >= 1 {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	exitCode, err := Run(ctx, cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	// Should have logged the error then retried successfully
+	foundErr := false
+	for _, e := range logger.events {
+		if e.event == "work-source-error" {
+			foundErr = true
+			break
+		}
+	}
+	if !foundErr {
+		t.Errorf("expected work-source-error event, got events: %v", logger.eventNames())
+	}
+	if runner.calls < 1 {
+		t.Errorf("expected at least 1 runner call after retry, got %d", runner.calls)
 	}
 }
 

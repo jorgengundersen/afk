@@ -131,17 +131,20 @@ type beadsWorkSource struct {
 	userPrompt string
 }
 
-func (b *beadsWorkSource) Next() (promptStr string, issueID string, issueTitle string, ok bool) {
+func (b *beadsWorkSource) Next() (promptStr string, issueID string, issueTitle string, ok bool, err error) {
 	issues, err := b.client.Ready()
-	if err != nil || len(issues) == 0 {
-		return "", "", "", false
+	if err != nil {
+		return "", "", "", false, fmt.Errorf("fetching work: %w", err)
+	}
+	if len(issues) == 0 {
+		return "", "", "", false, nil
 	}
 
 	top := issues[0]
 	assembled, err := prompt.Assemble(b.userPrompt, string(top.RawJSON))
 	if err != nil {
-		return "", "", "", false
+		return "", "", "", false, fmt.Errorf("assembling prompt: %w", err)
 	}
 
-	return assembled, top.ID, top.Title, true
+	return assembled, top.ID, top.Title, true, nil
 }

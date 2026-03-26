@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -59,7 +60,10 @@ func TestBeadsWorkSourceReturnsWork(t *testing.T) {
 		userPrompt: "focus on tests",
 	}
 
-	prompt, id, title, ok := ws.Next()
+	prompt, id, title, ok, err := ws.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected work to be available")
 	}
@@ -80,7 +84,10 @@ func TestBeadsWorkSourceNoWork(t *testing.T) {
 		userPrompt: "",
 	}
 
-	_, _, _, ok := ws.Next()
+	_, _, _, ok, err := ws.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ok {
 		t.Error("expected no work available")
 	}
@@ -94,9 +101,13 @@ type fakeIssue struct {
 
 type fakeBeadsClient struct {
 	issues []fakeIssue
+	err    error
 }
 
 func (f *fakeBeadsClient) Ready() ([]issueResult, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	var results []issueResult
 	for _, i := range f.issues {
 		results = append(results, issueResult{
@@ -106,6 +117,26 @@ func (f *fakeBeadsClient) Ready() ([]issueResult, error) {
 		})
 	}
 	return results, nil
+}
+
+func TestBeadsWorkSourceReadyError(t *testing.T) {
+	ws := &beadsWorkSource{
+		client: &fakeBeadsClient{
+			err: errors.New("bd: connection refused"),
+		},
+		userPrompt: "",
+	}
+
+	_, _, _, ok, err := ws.Next()
+	if ok {
+		t.Error("expected no work available on error")
+	}
+	if err == nil {
+		t.Fatal("expected error to be propagated")
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("expected error to contain 'connection refused', got %q", err.Error())
+	}
 }
 
 func TestHarnessBinaryNotFound(t *testing.T) {

@@ -26,7 +26,7 @@ type Runner interface {
 // WorkSource provides work items for each iteration. When nil is passed
 // to Run, the loop uses the static prompt from Config.
 type WorkSource interface {
-	Next() (prompt string, issueID string, issueTitle string, ok bool)
+	Next() (prompt string, issueID string, issueTitle string, ok bool, err error)
 }
 
 // Run orchestrates harness invocations in a loop.
@@ -51,8 +51,13 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 			break
 		}
 
-		prompt, issueID, issueTitle, ok := resolveWork(ws, cfg.Prompt)
+		prompt, issueID, issueTitle, ok, wsErr := resolveWork(ws, cfg.Prompt)
 		if ws != nil {
+			if wsErr != nil {
+				logger.Log("work-source-error", map[string]any{"err": wsErr.Error()})
+				logger.Log("session-end", map[string]any{"reason": "work-source-error"})
+				return 1, nil
+			}
 			logger.Log("beads-check", map[string]any{"hasWork": ok})
 			if !ok {
 				logger.Log("session-end", map[string]any{"reason": "no-work"})
@@ -88,8 +93,21 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 			break
 		}
 
-		prompt, issueID, issueTitle, ok := resolveWork(ws, cfg.Prompt)
+		prompt, issueID, issueTitle, ok, wsErr := resolveWork(ws, cfg.Prompt)
 		if ws != nil {
+			if wsErr != nil {
+				logger.Log("work-source-error", map[string]any{"err": wsErr.Error()})
+				if ctx.Err() != nil {
+					break
+				}
+				logger.Log("sleeping", map[string]any{"duration": cfg.Sleep})
+				select {
+				case <-time.After(cfg.Sleep):
+					logger.Log("waking", nil)
+				case <-ctx.Done():
+				}
+				continue
+			}
 			logger.Log("beads-check", map[string]any{"hasWork": ok})
 			if !ok {
 				// Daemon mode: sleep and retry when no work
@@ -127,9 +145,9 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 	return 0, nil
 }
 
-func resolveWork(ws WorkSource, staticPrompt string) (prompt, issueID, issueTitle string, ok bool) {
+func resolveWork(ws WorkSource, staticPrompt string) (prompt, issueID, issueTitle string, ok bool, err error) {
 	if ws == nil {
-		return staticPrompt, "", "", true
+		return staticPrompt, "", "", true, nil
 	}
 	return ws.Next()
 }
