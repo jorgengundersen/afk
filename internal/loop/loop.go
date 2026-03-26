@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -29,12 +30,19 @@ type WorkSource interface {
 	Next() (prompt string, issueID string, issueTitle string, ok bool, err error)
 }
 
+// logErr wraps a log write failure for identification.
+func logErr(err error) error {
+	return fmt.Errorf("log failure: %w", err)
+}
+
 // Run orchestrates harness invocations in a loop.
 func Run(ctx context.Context, cfg Config, runner Runner, logger Logger, ws WorkSource) (int, error) {
-	logger.Log("session-start", map[string]any{
+	if err := logger.Log("session-start", map[string]any{
 		"mode":    mode(cfg),
 		"maxIter": cfg.MaxIter,
-	})
+	}); err != nil {
+		return 1, logErr(err)
+	}
 
 	if cfg.Daemon {
 		return runDaemon(ctx, cfg, runner, logger, ws)
@@ -54,23 +62,32 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 		prompt, issueID, issueTitle, ok, wsErr := resolveWork(ws, cfg.Prompt)
 		if ws != nil {
 			if wsErr != nil {
-				logger.Log("work-source-error", map[string]any{"err": wsErr.Error()})
-				logger.Log("session-end", map[string]any{"reason": "work-source-error"})
+				if err := logger.Log("work-source-error", map[string]any{"err": wsErr.Error()}); err != nil {
+					return 1, logErr(err)
+				}
+				if err := logger.Log("session-end", map[string]any{"reason": "work-source-error"}); err != nil {
+					return 1, logErr(err)
+				}
 				return 1, nil
 			}
-			logger.Log("beads-check", map[string]any{"hasWork": ok})
+			if err := logger.Log("beads-check", map[string]any{"hasWork": ok}); err != nil {
+				return 1, logErr(err)
+			}
 			if !ok {
-				logger.Log("session-end", map[string]any{"reason": "no-work"})
+				if err := logger.Log("session-end", map[string]any{"reason": "no-work"}); err != nil {
+					return 1, logErr(err)
+				}
 				return 0, nil
 			}
 		}
 
 		iterations++
-		exitCode, err := runIteration(ctx, i, prompt, issueID, issueTitle, runner, logger)
+		res := runIteration(ctx, i, prompt, issueID, issueTitle, runner, logger)
+		if res.logErr != nil {
+			return res.exitCode, res.logErr
+		}
 
-		if err != nil {
-			logger.Log("error", map[string]any{"iteration": i, "err": err.Error()})
-		} else if exitCode == 0 {
+		if res.runErr == nil && res.exitCode == 0 {
 			allFailed = false
 		}
 	}
@@ -79,7 +96,9 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 	if ctx.Err() != nil {
 		reason = "signal"
 	}
-	logger.Log("session-end", map[string]any{"reason": reason})
+	if err := logger.Log("session-end", map[string]any{"reason": reason}); err != nil {
+		return 1, logErr(err)
+	}
 
 	if iterations > 0 && allFailed {
 		return 1, nil
@@ -97,28 +116,40 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 		prompt, issueID, issueTitle, ok, wsErr := resolveWork(ws, cfg.Prompt)
 		if ws != nil {
 			if wsErr != nil {
-				logger.Log("work-source-error", map[string]any{"err": wsErr.Error()})
+				if err := logger.Log("work-source-error", map[string]any{"err": wsErr.Error()}); err != nil {
+					return 1, logErr(err)
+				}
 				if ctx.Err() != nil {
 					break
 				}
-				logger.Log("sleeping", map[string]any{"duration": cfg.Sleep})
+				if err := logger.Log("sleeping", map[string]any{"duration": cfg.Sleep}); err != nil {
+					return 1, logErr(err)
+				}
 				select {
 				case <-time.After(cfg.Sleep):
-					logger.Log("waking", nil)
+					if err := logger.Log("waking", nil); err != nil {
+						return 1, logErr(err)
+					}
 				case <-ctx.Done():
 				}
 				continue
 			}
-			logger.Log("beads-check", map[string]any{"hasWork": ok})
+			if err := logger.Log("beads-check", map[string]any{"hasWork": ok}); err != nil {
+				return 1, logErr(err)
+			}
 			if !ok {
 				// Daemon mode: sleep and retry when no work
 				if ctx.Err() != nil {
 					break
 				}
-				logger.Log("sleeping", map[string]any{"duration": cfg.Sleep})
+				if err := logger.Log("sleeping", map[string]any{"duration": cfg.Sleep}); err != nil {
+					return 1, logErr(err)
+				}
 				select {
 				case <-time.After(cfg.Sleep):
-					logger.Log("waking", nil)
+					if err := logger.Log("waking", nil); err != nil {
+						return 1, logErr(err)
+					}
 				case <-ctx.Done():
 				}
 				continue
@@ -126,24 +157,30 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 		}
 
 		iteration++
-		_, err := runIteration(ctx, iteration, prompt, issueID, issueTitle, runner, logger)
-		if err != nil {
-			logger.Log("error", map[string]any{"err": err.Error()})
+		res := runIteration(ctx, iteration, prompt, issueID, issueTitle, runner, logger)
+		if res.logErr != nil {
+			return 1, res.logErr
 		}
 
 		if ctx.Err() != nil {
 			break
 		}
 
-		logger.Log("sleeping", map[string]any{"duration": cfg.Sleep})
+		if err := logger.Log("sleeping", map[string]any{"duration": cfg.Sleep}); err != nil {
+			return 1, logErr(err)
+		}
 		select {
 		case <-time.After(cfg.Sleep):
-			logger.Log("waking", nil)
+			if err := logger.Log("waking", nil); err != nil {
+				return 1, logErr(err)
+			}
 		case <-ctx.Done():
 		}
 	}
 
-	logger.Log("session-end", map[string]any{"reason": "signal"})
+	if err := logger.Log("session-end", map[string]any{"reason": "signal"}); err != nil {
+		return 1, logErr(err)
+	}
 	return 0, nil
 }
 
@@ -154,16 +191,25 @@ func resolveWork(ws WorkSource, staticPrompt string) (prompt, issueID, issueTitl
 	return ws.Next()
 }
 
-func runIteration(ctx context.Context, iteration int, prompt, issueID, issueTitle string, runner Runner, logger Logger) (int, error) {
+// iterResult holds the outcome of a single iteration.
+type iterResult struct {
+	exitCode int
+	runErr   error // error from the runner (nil = runner succeeded)
+	logErr   error // error from logging (nil = logging succeeded)
+}
+
+func runIteration(ctx context.Context, iteration int, prompt, issueID, issueTitle string, runner Runner, logger Logger) iterResult {
 	fields := map[string]any{"iteration": iteration}
 	if issueID != "" {
 		fields["issueID"] = issueID
 		fields["issueTitle"] = issueTitle
 	}
-	logger.Log("iteration-start", fields)
+	if err := logger.Log("iteration-start", fields); err != nil {
+		return iterResult{exitCode: 1, logErr: logErr(err)}
+	}
 	start := time.Now()
 
-	exitCode, err := runner.Run(ctx, prompt)
+	exitCode, runErr := runner.Run(ctx, prompt)
 	duration := time.Since(start)
 
 	endFields := map[string]any{
@@ -175,9 +221,17 @@ func runIteration(ctx context.Context, iteration int, prompt, issueID, issueTitl
 		endFields["issueID"] = issueID
 		endFields["issueTitle"] = issueTitle
 	}
-	logger.Log("iteration-end", endFields)
+	if err := logger.Log("iteration-end", endFields); err != nil {
+		return iterResult{exitCode: 1, logErr: logErr(err)}
+	}
 
-	return exitCode, err
+	if runErr != nil {
+		if err := logger.Log("error", map[string]any{"iteration": iteration, "err": runErr.Error()}); err != nil {
+			return iterResult{exitCode: 1, logErr: logErr(err)}
+		}
+	}
+
+	return iterResult{exitCode: exitCode, runErr: runErr}
 }
 
 func mode(cfg Config) string {

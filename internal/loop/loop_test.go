@@ -41,10 +41,11 @@ func (f *fakeRunner) getCalls() int {
 	return f.calls
 }
 
-// spyLogger captures logged events.
+// spyLogger captures logged events and optionally returns errors.
 type spyLogger struct {
-	mu     sync.Mutex
-	events []loggedEvent
+	mu       sync.Mutex
+	events   []loggedEvent
+	failFrom int // if > 0, return error starting at this call index
 }
 
 type loggedEvent struct {
@@ -56,6 +57,9 @@ func (s *spyLogger) Log(event string, fields map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, loggedEvent{event: event, fields: fields})
+	if s.failFrom > 0 && len(s.events) >= s.failFrom {
+		return errors.New("log write failed")
+	}
 	return nil
 }
 
@@ -729,5 +733,39 @@ func TestWorkSource_NilPreservesExistingBehaviour(t *testing.T) {
 		if e.event == "beads-check" {
 			t.Error("beads-check should not be logged when WorkSource is nil")
 		}
+	}
+}
+
+func TestLogFailureExitsMaxIter(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	// Fail on second Log call (after session-start)
+	logger := &spyLogger{failFrom: 2}
+	cfg := Config{MaxIter: 5, Prompt: "p"}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
+	if err == nil {
+		t.Fatal("expected error from log failure, got nil")
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
+	}
+	// Should not have run all 5 iterations
+	if runner.getCalls() > 1 {
+		t.Errorf("expected loop to stop early, but runner got %d calls", runner.getCalls())
+	}
+}
+
+func TestLogFailureExitsDaemon(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	// Fail on second Log call (after session-start)
+	logger := &spyLogger{failFrom: 2}
+	cfg := Config{MaxIter: 20, Daemon: true, Sleep: 10 * time.Millisecond, Prompt: "p"}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
+	if err == nil {
+		t.Fatal("expected error from log failure, got nil")
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
 	}
 }
