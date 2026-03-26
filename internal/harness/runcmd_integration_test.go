@@ -95,25 +95,25 @@ func TestIntegrationSIGTERMBeforeSIGKILL(t *testing.T) {
 	dir := t.TempDir()
 	markerFile := filepath.Join(dir, "got-sigterm")
 
+	pidFile := filepath.Join(dir, "pid")
+
 	script := helperScript(t, dir, "trap-term.sh", fmt.Sprintf(`#!/bin/sh
 trap 'echo yes > %s; exit 0' TERM
+echo $$ > %s
 sleep 300
-`, markerFile))
+`, markerFile, pidFile))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cmd := exec.Command(script)
 	done := make(chan struct{})
 	go func() {
-		runCmd(ctx, cmd)
+		runCmd(ctx, exec.Command(script))
 		close(done)
 	}()
 
-	// Wait for the process to start and register its trap
-	for cmd.Process == nil {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// Wait for the process to start and register its trap via PID file
+	readPID(t, pidFile, 5*time.Second)
 	time.Sleep(50 * time.Millisecond) // allow trap to register
 
 	cancel()

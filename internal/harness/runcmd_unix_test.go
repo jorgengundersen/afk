@@ -6,9 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -39,8 +38,11 @@ func TestRunCmdExitCode1(t *testing.T) {
 func TestRunCmdContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Start a long-running process, then cancel context
-	cmd := exec.Command("sleep", "60")
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+
+	// Start a long-running process that writes its PID, then cancel context
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo $$ > %s; sleep 60", pidFile))
 	done := make(chan struct{})
 	var exitCode int
 	var runErr error
@@ -49,10 +51,8 @@ func TestRunCmdContextCancellation(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for process to start
-	for cmd.Process == nil {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// Wait for process to start via PID file (no shared cmd.Process access)
+	readPID(t, pidFile, 5*time.Second)
 
 	cancel()
 	<-done
@@ -69,9 +69,8 @@ func TestRunCmdContextCancellation(t *testing.T) {
 func TestRunCmdKillsGrandchildren(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Parent shell spawns a grandchild that writes its PID to a temp file
-	pidFile := fmt.Sprintf("/tmp/afk-test-grandchild-%d.pid", os.Getpid())
-	defer os.Remove(pidFile)
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "grandchild.pid")
 
 	// The parent shell spawns a background grandchild (sleep), writes its PID,
 	// then waits. When the group is killed, the grandchild should die too.
@@ -86,18 +85,7 @@ wait`, pidFile)
 	}()
 
 	// Wait for grandchild PID file to appear
-	var grandchildPID int
-	for i := 0; i < 100; i++ {
-		data, err := os.ReadFile(pidFile)
-		if err == nil && len(strings.TrimSpace(string(data))) > 0 {
-			fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &grandchildPID)
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if grandchildPID == 0 {
-		t.Fatal("grandchild PID file never appeared")
-	}
+	grandchildPID := readPID(t, pidFile, 5*time.Second)
 
 	cancel()
 	<-done
@@ -106,8 +94,7 @@ wait`, pidFile)
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify the grandchild is dead: signal 0 should fail
-	err := syscall.Kill(grandchildPID, 0)
-	if err == nil {
+	if processAlive(grandchildPID) {
 		t.Fatalf("grandchild process %d is still alive after cancellation", grandchildPID)
 	}
 }
@@ -124,20 +111,20 @@ func TestRunCmdSetsProcessGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Run a process and verify it gets its own process group (PGID = PID)
-	cmd := exec.Command("sleep", "60")
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+
+	// Run a process that writes its PID, then verify it gets its own process group
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo $$ > %s; sleep 60", pidFile))
 	done := make(chan struct{})
 	go func() {
 		runCmd(ctx, cmd)
 		close(done)
 	}()
 
-	// Wait for process to start
-	for cmd.Process == nil {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// Wait for process to start via PID file (no shared cmd.Process access)
+	pid := readPID(t, pidFile, 5*time.Second)
 
-	pid := cmd.Process.Pid
 	pgid, err := syscall.Getpgid(pid)
 	if err != nil {
 		t.Fatalf("failed to get pgid: %v", err)
