@@ -88,6 +88,7 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 }
 
 func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws WorkSource) (int, error) {
+	iteration := 0
 	for {
 		if ctx.Err() != nil {
 			break
@@ -124,7 +125,8 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 			}
 		}
 
-		_, err := runIteration(ctx, 0, prompt, issueID, issueTitle, runner, logger)
+		iteration++
+		_, err := runIteration(ctx, iteration, prompt, issueID, issueTitle, runner, logger)
 		if err != nil {
 			logger.Log("error", map[string]any{"err": err.Error()})
 		}

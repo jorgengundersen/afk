@@ -307,6 +307,48 @@ func TestIterationEndContainsExitCodeAndDuration(t *testing.T) {
 	}
 }
 
+func TestDaemonIterationNumberIncrements(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	callCount := 0
+	runner := &cancellingFakeRunner{
+		inner:       &fakeRunner{results: []runResult{{exitCode: 0}}},
+		cancelAfter: 3,
+		cancel:      cancel,
+		calls:       &callCount,
+	}
+	logger := &spyLogger{}
+	cfg := Config{
+		Daemon:  true,
+		Sleep:   10 * time.Millisecond,
+		Prompt:  "p",
+		MaxIter: 20,
+	}
+
+	_, err := Run(ctx, cfg, runner, logger, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Collect iteration numbers from iteration-start events
+	var iterations []int
+	logger.mu.Lock()
+	for _, e := range logger.events {
+		if e.event == "iteration-start" {
+			iterations = append(iterations, e.fields["iteration"].(int))
+		}
+	}
+	logger.mu.Unlock()
+
+	if len(iterations) < 3 {
+		t.Fatalf("expected at least 3 iterations, got %d", len(iterations))
+	}
+	for i, n := range iterations {
+		if n != i+1 {
+			t.Errorf("iteration %d: expected number %d, got %d", i, i+1, n)
+		}
+	}
+}
+
 func TestDaemonWakingEventLogged(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	callCount := 0
