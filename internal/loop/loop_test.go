@@ -755,6 +755,65 @@ func TestLogFailureExitsMaxIter(t *testing.T) {
 	}
 }
 
+func TestDaemonAllFailuresExitOne(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeRunner{results: []runResult{
+		{exitCode: 1, err: errors.New("fail")},
+	}}
+	callCount := 0
+	cancellingRunner := &cancellingFakeRunner{
+		inner:       runner,
+		cancelAfter: 3,
+		cancel:      cancel,
+		calls:       &callCount,
+	}
+	logger := &spyLogger{}
+	cfg := Config{
+		Daemon:  true,
+		Sleep:   10 * time.Millisecond,
+		Prompt:  "p",
+		MaxIter: 20,
+	}
+
+	exitCode, err := Run(ctx, cfg, cancellingRunner, logger, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1 when all daemon iterations fail, got %d", exitCode)
+	}
+}
+
+func TestDaemonPartialSuccessExitZero(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeRunner{results: []runResult{
+		{exitCode: 1, err: errors.New("fail")},
+		{exitCode: 0, err: nil},
+	}}
+	callCount := 0
+	cancellingRunner := &cancellingFakeRunner{
+		inner:       runner,
+		cancelAfter: 2,
+		cancel:      cancel,
+		calls:       &callCount,
+	}
+	logger := &spyLogger{}
+	cfg := Config{
+		Daemon:  true,
+		Sleep:   10 * time.Millisecond,
+		Prompt:  "p",
+		MaxIter: 20,
+	}
+
+	exitCode, err := Run(ctx, cfg, cancellingRunner, logger, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0 when some daemon iterations succeed, got %d", exitCode)
+	}
+}
+
 func TestLogFailureExitsDaemon(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
 	// Fail on second Log call (after session-start)

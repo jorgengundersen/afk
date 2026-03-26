@@ -108,6 +108,7 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 
 func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws WorkSource) (int, error) {
 	iteration := 0
+	allFailed := true
 	for {
 		if ctx.Err() != nil {
 			break
@@ -162,6 +163,10 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 			return 1, res.logErr
 		}
 
+		if res.runErr == nil && res.exitCode == 0 {
+			allFailed = false
+		}
+
 		if ctx.Err() != nil {
 			break
 		}
@@ -180,6 +185,9 @@ func runDaemon(ctx context.Context, cfg Config, runner Runner, logger Logger, ws
 
 	if err := logger.Log("session-end", map[string]any{"reason": "signal"}); err != nil {
 		return 1, logErr(err)
+	}
+	if iteration > 0 && allFailed {
+		return 1, nil
 	}
 	return 0, nil
 }

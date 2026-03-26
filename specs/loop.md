@@ -42,6 +42,10 @@ The loop accepts a Config, a Runner, a Logger, and an optional WorkSource.
 - `cfg` provides MaxIter, Daemon, Sleep, and Prompt.
 - `runner` satisfies the local Runner interface — the loop calls Run(ctx, prompt).
 - `logger` satisfies the local Logger interface — the loop calls Log(event, fields).
+  Log returns an error. If logging fails, the loop exits immediately with
+  exit code 1 — a broken logger means the session is unobservable, which
+  violates the fail-fast principle. The loop does not attempt to continue
+  without logging.
 - `workSource` is an optional dependency. When nil, the loop uses the static
   prompt from Config. When present, the loop calls it before each iteration
   to get the prompt. The work source returns a prompt string, an issue ID,
@@ -81,6 +85,8 @@ dependencies.
   immediately and exit.
 - When a work source is present and returns no work, the loop sleeps and
   retries on the next cycle instead of exiting.
+- If ALL iterations had launch failures or non-zero exit codes, return
+  exit code 1 (same as max-iterations mode).
 
 ### Context cancellation
 
