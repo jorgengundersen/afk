@@ -34,10 +34,10 @@ func TestMissingPFlag(t *testing.T) {
 	}
 }
 
-func TestPrintFlag(t *testing.T) {
+func TestRunRawHarness(t *testing.T) {
 	bin := build(t)
 
-	cmd := exec.Command(bin, "-p", "hello world")
+	cmd := exec.Command(bin, "--raw", "echo {prompt}", "-p", "hello world", "-n", "1")
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("expected exit 0, got error: %v", err)
@@ -46,5 +46,21 @@ func TestPrintFlag(t *testing.T) {
 	got := strings.TrimRight(string(out), "\n")
 	if got != "hello world" {
 		t.Errorf("stdout = %q, want %q", got, "hello world")
+	}
+}
+
+func TestHarnessBinaryNotFound(t *testing.T) {
+	bin := build(t)
+
+	// Default harness is "claude" which won't be in PATH during tests
+	cmd := exec.Command(bin, "-p", "hello", "-n", "1")
+	cmd.Env = []string{"PATH=/nonexistent", "HOME=" + t.TempDir()}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 2 {
+		t.Fatalf("expected exit code 2, got %v", err)
 	}
 }
