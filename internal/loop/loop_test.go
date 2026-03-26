@@ -52,10 +52,11 @@ type loggedEvent struct {
 	fields map[string]any
 }
 
-func (s *spyLogger) Log(event string, fields map[string]any) {
+func (s *spyLogger) Log(event string, fields map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, loggedEvent{event: event, fields: fields})
+	return nil
 }
 
 func (s *spyLogger) eventNames() []string {

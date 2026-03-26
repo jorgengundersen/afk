@@ -23,19 +23,20 @@ func New(path string) *Logger {
 }
 
 // Log writes a single event with the given name and fields.
-// Silent on failure — never returns error, never panics.
-func (l *Logger) Log(event string, fields map[string]any) {
+// Returns an error if the file cannot be created or the write fails.
+// Log after Close is a no-op and returns nil.
+func (l *Logger) Log(event string, fields map[string]any) error {
 	if l.closed {
-		return
+		return nil
 	}
 	if l.file == nil {
 		dir := filepath.Dir(l.path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return
+			return fmt.Errorf("create log directory: %w", err)
 		}
 		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
-			return
+			return fmt.Errorf("open log file: %w", err)
 		}
 		l.file = f
 	}
@@ -64,7 +65,10 @@ func (l *Logger) Log(event string, fields map[string]any) {
 	}
 
 	b.WriteString("\n")
-	_, _ = l.file.WriteString(b.String())
+	if _, err := l.file.WriteString(b.String()); err != nil {
+		return fmt.Errorf("write log event: %w", err)
+	}
+	return nil
 }
 
 // Close flushes and closes the underlying file.

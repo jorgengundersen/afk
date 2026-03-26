@@ -11,7 +11,9 @@ import (
 func TestLogSingleEvent(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("test", map[string]any{"k": "v"})
+	if err := l.Log("test", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -32,7 +34,9 @@ func TestLogSingleEvent(t *testing.T) {
 func TestLogMultipleFieldsSorted(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("e", map[string]any{"b": "2", "a": "1"})
+	if err := l.Log("e", map[string]any{"b": "2", "a": "1"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -52,7 +56,9 @@ func TestLogMultipleFieldsSorted(t *testing.T) {
 func TestLogValueWithSpacesQuoted(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("e", map[string]any{"msg": "hello world"})
+	if err := l.Log("e", map[string]any{"msg": "hello world"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -72,7 +78,9 @@ func TestLogValueWithSpacesQuoted(t *testing.T) {
 func TestLogNoFields(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("ping", map[string]any{})
+	if err := l.Log("ping", map[string]any{}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -92,8 +100,12 @@ func TestLogNoFields(t *testing.T) {
 func TestLogMultipleEventsAppended(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("first", map[string]any{"n": "1"})
-	l.Log("second", map[string]any{"n": "2"})
+	if err := l.Log("first", map[string]any{"n": "1"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
+	if err := l.Log("second", map[string]any{"n": "2"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -118,7 +130,9 @@ func TestLogMultipleEventsAppended(t *testing.T) {
 func TestCloseFlushes(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("flush-test", map[string]any{"ok": "true"})
+	if err := l.Log("flush-test", map[string]any{"ok": "true"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -136,7 +150,9 @@ func TestCloseFlushes(t *testing.T) {
 func TestLogAnyValueTypes(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("e", map[string]any{"count": 42, "name": "test"})
+	if err := l.Log("e", map[string]any{"count": 42, "name": "test"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -156,7 +172,9 @@ func TestLogAnyValueTypes(t *testing.T) {
 func TestLogAfterCloseIsNoop(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("before", map[string]any{"n": "1"})
+	if err := l.Log("before", map[string]any{"n": "1"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}
@@ -164,8 +182,10 @@ func TestLogAfterCloseIsNoop(t *testing.T) {
 	// Remove the log file so we can detect if Log re-opens it.
 	os.Remove(tmpFile)
 
-	// Log after Close should silently do nothing — no re-open, no write.
-	l.Log("after-close", map[string]any{"n": "2"})
+	// Log after Close should return nil — no re-open, no write.
+	if err := l.Log("after-close", map[string]any{"n": "2"}); err != nil {
+		t.Fatalf("Log after Close returned error: %v", err)
+	}
 
 	// File should NOT be recreated.
 	if _, err := os.Stat(tmpFile); err == nil {
@@ -176,7 +196,9 @@ func TestLogAfterCloseIsNoop(t *testing.T) {
 func TestDoubleCloseReturnsNil(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.log")
 	l := New(tmpFile)
-	l.Log("event", map[string]any{"k": "v"})
+	if err := l.Log("event", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 
 	if err := l.Close(); err != nil {
 		t.Fatalf("first Close() error: %v", err)
@@ -198,12 +220,41 @@ func TestFileCreatedOnFirstLogNotNew(t *testing.T) {
 	}
 }
 
+func TestLogReturnsErrorOnBadPath(t *testing.T) {
+	// /dev/null/impossible is never a valid directory.
+	l := New("/dev/null/impossible/test.log")
+	err := l.Log("test", map[string]any{"k": "v"})
+	if err == nil {
+		t.Fatal("expected error when directory cannot be created, got nil")
+	}
+}
+
+func TestLogReturnsErrorOnWriteFailure(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	l := New(tmpFile)
+
+	// First Log succeeds — opens the file.
+	if err := l.Log("setup", map[string]any{}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
+
+	// Close the underlying file to force a write error on next Log.
+	l.file.Close()
+
+	err := l.Log("after-fd-closed", map[string]any{})
+	if err == nil {
+		t.Fatal("expected error when writing to closed fd, got nil")
+	}
+}
+
 func TestLogCreatesMissingDirectory(t *testing.T) {
 	// Use a nested path where the parent directory doesn't exist.
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "nested", "deep", "test.log")
 	l := New(logPath)
-	l.Log("test", map[string]any{"k": "v"})
+	if err := l.Log("test", map[string]any{"k": "v"}); err != nil {
+		t.Fatalf("Log() error: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("Close() error: %v", err)
 	}

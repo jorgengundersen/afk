@@ -15,7 +15,7 @@ type Config struct {
 
 // Logger is the interface the loop uses to record events.
 type Logger interface {
-	Log(event string, fields map[string]any)
+	Log(event string, fields map[string]any) error
 }
 
 // Runner executes an agent with the given prompt.
