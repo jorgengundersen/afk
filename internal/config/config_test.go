@@ -1,12 +1,16 @@
 package config
 
 import (
+	"bytes"
+	"flag"
+	"io"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestParseFlags_Defaults(t *testing.T) {
-	cfg, err := ParseFlags([]string{"-p", "hi"})
+	cfg, err := ParseFlags([]string{"-p", "hi"}, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +55,7 @@ func TestParseFlags_AllFlags(t *testing.T) {
 		"--harness-args", "--dangerously-skip-permissions --verbose",
 		"--beads",
 	}
-	cfg, err := ParseFlags(args)
+	cfg, err := ParseFlags(args, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,14 +95,14 @@ func TestParseFlags_AllFlags(t *testing.T) {
 }
 
 func TestParseFlags_UnknownFlag(t *testing.T) {
-	_, err := ParseFlags([]string{"--nope"})
+	_, err := ParseFlags([]string{"--nope"}, io.Discard)
 	if err == nil {
 		t.Fatal("expected error for unknown flag")
 	}
 }
 
 func TestParseFlags_BadType(t *testing.T) {
-	_, err := ParseFlags([]string{"-n", "abc"})
+	_, err := ParseFlags([]string{"-n", "abc"}, io.Discard)
 	if err == nil {
 		t.Fatal("expected error for bad type on -n")
 	}
@@ -174,7 +178,7 @@ func TestParseFlags_RepeatableLabels(t *testing.T) {
 		"--label-any", "bugfix",
 		"--label-any", "feature",
 	}
-	cfg, err := ParseFlags(args)
+	cfg, err := ParseFlags(args, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +191,7 @@ func TestParseFlags_RepeatableLabels(t *testing.T) {
 }
 
 func TestParseFlags_LabelsDefaultEmpty(t *testing.T) {
-	cfg, err := ParseFlags([]string{"-p", "hi"})
+	cfg, err := ParseFlags([]string{"-p", "hi"}, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -230,8 +234,34 @@ func TestValidate_LabelsWithBeads(t *testing.T) {
 	}
 }
 
+func TestParseFlags_HelpWritesUsageToStdout(t *testing.T) {
+	var buf bytes.Buffer
+	_, err := ParseFlags([]string{"-h"}, &buf)
+	if err == nil {
+		t.Fatal("expected flag.ErrHelp")
+	}
+	if err != flag.ErrHelp {
+		t.Fatalf("expected flag.ErrHelp, got %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "-p") {
+		t.Errorf("usage output should contain -p flag, got %q", output)
+	}
+}
+
+func TestParseFlags_ErrorDoesNotWriteToStdout(t *testing.T) {
+	var buf bytes.Buffer
+	_, err := ParseFlags([]string{"--nope"}, &buf)
+	if err == nil {
+		t.Fatal("expected error for unknown flag")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("error output should not go to stdout, got %q", buf.String())
+	}
+}
+
 func TestParseFlags_SetFlags_NotSetByDefault(t *testing.T) {
-	cfg, err := ParseFlags([]string{"-p", "hi"})
+	cfg, err := ParseFlags([]string{"-p", "hi"}, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

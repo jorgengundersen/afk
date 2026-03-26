@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 
@@ -15,8 +17,11 @@ import (
 )
 
 func main() {
-	cfg, err := config.ParseFlags(os.Args[1:])
+	cfg, err := config.ParseFlags(os.Args[1:], os.Stdout)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}

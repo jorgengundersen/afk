@@ -32,7 +32,7 @@ func (f *stringSliceFlag) Set(val string) error {
 	return nil
 }
 
-func ParseFlags(args []string) (Config, error) {
+func ParseFlags(args []string, stdout io.Writer) (Config, error) {
 	var cfg Config
 
 	fs := flag.NewFlagSet("afk", flag.ContinueOnError)
@@ -53,6 +53,10 @@ func ParseFlags(args []string) (Config, error) {
 	fs.Var(&labelsAny, "label-any", "label filter (OR, repeatable)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fs.SetOutput(stdout)
+			fs.PrintDefaults()
+		}
 		return Config{}, err
 	}
 
