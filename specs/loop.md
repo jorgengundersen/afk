@@ -1,8 +1,8 @@
 # Iteration Loop
 
-The core orchestrator. Takes a Config, a Runner, and a Logger, then runs the
-harness in a loop. No business logic of its own — it sequences the primitives
-built in prior specs.
+The core orchestrator. Takes a Config, a Runner, a Logger, and an optional
+work source, then runs the harness in a loop. No business logic of its own —
+it sequences the primitives built in prior specs.
 
 ## What this adds
 
@@ -17,6 +17,14 @@ $ afk -p "refactor auth" -n 1
 
 $ afk -p "refactor auth" -d
 # daemon mode: run iteration, sleep, repeat indefinitely
+
+$ afk --beads
+# iteration 1: fetch issue → compose prompt → invoke harness → log result
+# iteration 2: fetch next issue → compose prompt → invoke harness → log result
+# no issues ready → exit 0
+
+$ afk --beads -d
+# same, but sleeps and retries when no issues ready
 ```
 
 ## Structure
@@ -28,37 +36,22 @@ internal/loop/loop_test.go  # Tests
 
 ## Run
 
-```go
-// Config holds the parameters the loop needs to run.
-type Config struct {
-    MaxIter int
-    Daemon  bool
-    Sleep   time.Duration
-    Prompt  string
-}
-
-// Logger is the interface the loop uses to record events.
-type Logger interface {
-    Log(event string, fields map[string]any)
-}
-
-// Runner executes an agent with the given prompt.
-type Runner interface {
-    Run(ctx context.Context, prompt string) (int, error)
-}
-
-func Run(ctx context.Context, cfg Config, runner Runner, logger Logger) (int, error)
-```
+The loop accepts a Config, a Runner, a Logger, and an optional WorkSource.
 
 - `ctx` carries cancellation (from signal handling, tested via context).
 - `cfg` provides MaxIter, Daemon, Sleep, and Prompt.
-- `runner` satisfies the local `Runner` interface — the loop calls `Run(ctx, prompt)`.
-- `logger` satisfies the local `Logger` interface — the loop calls `Log(event, fields)`.
+- `runner` satisfies the local Runner interface — the loop calls Run(ctx, prompt).
+- `logger` satisfies the local Logger interface — the loop calls Log(event, fields).
+- `workSource` is an optional dependency. When nil, the loop uses the static
+  prompt from Config. When present, the loop calls it before each iteration
+  to get the prompt. The work source returns a prompt string, an issue ID,
+  an issue title, and a boolean indicating whether work is available.
 - Returns an exit code and an optional error.
 
-The loop defines its own `Config`, `Runner`, and `Logger` types rather than importing
-concrete types from other packages. This decouples the loop from the config, harness,
-and logger packages and enables testability via dependency injection.
+The loop defines its own Config, Runner, Logger, and WorkSource types rather
+than importing concrete types from other packages. This decouples the loop
+from the config, harness, beads, and logger packages and enables testability
+via dependency injection.
 
 The loop does NOT call ParseFlags, Validate, Assemble, or New. Those are
 called by main before the loop starts. The loop receives ready-to-use
@@ -68,52 +61,26 @@ dependencies.
 
 ### Max-iterations mode (default)
 
-```
-log session-start {mode: "max-iterations", maxIter: MaxIter}
-for i := 1; i <= MaxIter; i++ {
-    log iteration-start
-    exitCode, err := runner.Run(ctx, prompt)
-    log iteration-end (with exit code, duration)
-    if err != nil {
-        log error
-        // launch failure — still continue
-    }
-}
-log session-end reason=complete
-return 0
-```
-
-- Runs exactly MaxIter iterations unless cancelled via context.
+- Runs exactly MaxIter iterations unless cancelled via context or work
+  source is exhausted.
 - Non-zero exit codes from the agent do NOT stop the loop. Log and continue.
 - Launch failures (err != nil) do NOT stop the loop. Log and continue.
 - If ALL iterations had launch failures (err != nil on every one), return
   exit code 1.
+- When a work source is present and returns no work, the loop exits with
+  reason "no-work" and exit code 0.
+- The beads-check event is logged with the issue count each time the work
+  source is consulted.
 
 ### Daemon mode
-
-```
-log session-start {mode: "daemon", maxIter: MaxIter}
-for {
-    log iteration-start
-    exitCode, err := runner.Run(ctx, prompt)
-    log iteration-end
-    if err != nil {
-        log error
-    }
-    log sleeping
-    sleep(cfg.Sleep) // interruptible by ctx
-    log waking
-}
-// only exits via context cancellation
-log session-end reason=signal
-return 0
-```
 
 - Runs indefinitely until context is cancelled.
 - All iterations use a fixed iteration number of 0 (no incrementing counter).
 - Sleeps between iterations for `cfg.Sleep` duration.
 - Sleep must be interruptible — if ctx is cancelled during sleep, wake
   immediately and exit.
+- When a work source is present and returns no work, the loop sleeps and
+  retries on the next cycle instead of exiting.
 
 ### Context cancellation
 
@@ -153,23 +120,31 @@ Tests should read the temp log file and verify:
 - `session-end` is the last event with correct reason.
 - `error` events appear when runner returns err.
 
+### Iteration logging with work source
+
+When a work source provides an issue, the iteration-start and iteration-end
+log events include the issue ID and title fields alongside the iteration
+number. When no work source is present, these fields are omitted (existing
+behaviour).
+
 ## Out of scope
 
-- Beads issue fetching and prompt recomposition per iteration (future beads
-  integration spec).
 - Signal handling setup (separate spec — the loop just respects ctx).
-- Prompt assembly — done before the loop, passed in as a string.
+- Prompt assembly — the work source or caller handles this before the loop
+  receives the prompt.
 - Retry backoff or adaptive sleep.
 - Progress output to terminal (the loop is silent; agents write to terminal
   directly).
+- Parallel loop coordination or race condition prevention — label
+  partitioning is a user convention documented in the beads client spec.
 
 ## Definition of done
 
-- `Run` orchestrates iterations using Runner and Logger.
-- Max-iterations mode runs exactly N iterations.
-- Daemon mode runs indefinitely with interruptible sleep.
+- `Run` orchestrates iterations using Runner, Logger, and optional WorkSource.
+- Max-iterations mode runs exactly N iterations or exits on no work.
+- Daemon mode runs indefinitely with interruptible sleep, retries on no work.
 - Context cancellation exits cleanly with reason=signal.
 - Non-zero exit codes and launch failures do not stop the loop.
 - All launch failures → exit code 1.
+- Iteration logs include issue ID and title when work source provides them.
 - All test cases pass.
-- Tests passes.

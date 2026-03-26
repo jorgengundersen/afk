@@ -32,10 +32,7 @@ CLI is running underneath.
 ## Structure
 
 ```
-internal/harness/harness.go           # Runner contract, registry, implementations
-internal/harness/harness_test.go      # Tests
-internal/harness/runcmd_unix.go       # Process group management (Unix)
-internal/harness/runcmd_other.go      # Fallback (non-Unix)
+internal/harness/           # Runner contract, implementations, output rendering
 ```
 
 ## Contract
@@ -53,6 +50,26 @@ produce an error.
 A pre-flight check verifies the harness binary exists in PATH before the
 loop starts. This is a runtime/environment check, not a config constraint.
 
+Each harness is responsible for showing the user what the agent is doing.
+Agent activity is rendered to the terminal during execution. What "rendered"
+means depends on the harness:
+
+- When a harness supports structured output from the agent CLI, it parses
+  the stream and renders each event as it arrives. The categories of
+  information rendered are: agent text (formatted for terminal readability),
+  tool invocations (tool name and key inputs, truncated), tool results
+  (truncated), and an iteration summary (duration and cost when available).
+
+- When structured output is not available, the harness passes subprocess
+  stdout/stderr directly to the terminal.
+
+Claude's CLI supports structured JSON streaming. The Claude harness uses
+this to parse and render agent activity. OpenCode and Raw harnesses inherit
+stdout/stderr directly (OpenCode structured output is future work).
+
+Subprocesses run in their own process group so that context cancellation
+terminates the entire tree, not just the direct child.
+
 ### Behaviour rules
 
 | Given | Then |
@@ -69,66 +86,20 @@ loop starts. This is a runtime/environment check, not a config constraint.
 | Subprocess exits non-zero | Return the exit code, err=nil |
 | Binary cannot be started | Return err (not an exit code) |
 | Context cancelled while running | Subprocess is terminated, return context error |
-
-## Agent output
-
-Each harness is responsible for showing the user what the agent is doing.
-The generic contract is: agent activity is rendered to the terminal during
-execution. What "rendered" means depends on the harness.
-
-### Generic output model
-
-All harnesses present the same categories of information when available:
-
-| Category | What the user sees |
-|----------|--------------------|
-| Agent text | What the agent is saying or thinking, formatted for terminal readability |
-| Tool invocation | Tool name and key inputs (truncated for readability) |
-| Tool result | Output from the tool (truncated for readability) |
-| Iteration summary | Duration and cost (if the agent reports it) |
-
-Not all harnesses support all categories. When structured output is not
-available, the harness falls back to passing subprocess stdout/stderr
-directly to the terminal.
-
-### Per-harness output
-
-**Claude** — requests structured JSON output from the CLI
-(`--output-format stream-json --verbose`). Parses the stream and renders
-each event as it arrives according to the generic model above. Stderr is
-inherited.
-
-**OpenCode** — inherits stdout/stderr directly. No structured output
-parsing (format not yet defined). Future work.
-
-**Raw** — inherits stdout/stderr directly. No processing. The user's
-command is responsible for its own output.
-
-### Output behaviour rules
-
-| Given | Then |
-|-------|------|
-| Harness supports structured output | Agent activity is parsed and rendered per the generic model |
-| Agent text contains raw content (newlines, whitespace) | Text is formatted for human-readable terminal output |
-| Harness does not support structured output | Subprocess stdout/stderr are inherited by the terminal |
-| Structured stream contains an unknown event | Event is silently skipped |
-| Structured stream contains malformed JSON | Line is skipped, processing continues |
-| Context is cancelled mid-stream | Output processing stops promptly, partial output is fine |
-
-## Process group management
-
-Agents like `claude` or `opencode` may spawn child processes of their own.
-Without process group isolation, context cancellation only kills the direct
-child — grandchildren become orphan processes. The harness must prevent this.
-
-| Given | Then |
-|-------|------|
 | Any subprocess is started | It runs in its own process group (PGID = child PID) |
-| Context is cancelled while subprocess is running | SIGTERM is sent to the entire process group, not just the direct child |
+| Context cancelled while subprocess is running | SIGTERM is sent to the entire process group, not just the direct child |
 | Process group does not exit after SIGTERM within a grace period | SIGKILL is sent to the entire process group |
 | Subprocess exits normally (no cancellation) | No signal is sent; exit code is returned |
 | Subprocess has grandchildren when cancelled | All descendants in the process group are terminated |
 | Running on a non-POSIX platform | Falls back to default os/exec behaviour |
+| Claude harness runs subprocess | Structured JSON stream is parsed and rendered per the generic output model |
+| Claude harness runs subprocess | Stderr is inherited by the terminal |
+| OpenCode harness runs subprocess | Subprocess stdout/stderr are inherited by the terminal |
+| Raw harness runs subprocess | Subprocess stdout/stderr are inherited by the terminal |
+| Agent text contains raw content (newlines, whitespace) | Text is formatted for human-readable terminal output |
+| Structured stream contains an unknown event | Event is silently skipped |
+| Structured stream contains malformed JSON | Line is skipped, processing continues |
+| Context is cancelled mid-stream | Output processing stops promptly, partial output is fine |
 
 ### What this does NOT do
 

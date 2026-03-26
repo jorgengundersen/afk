@@ -8,7 +8,7 @@ loop, harnesses, and future config-file loading all build on.
 
 ```
 $ afk -p "do the thing" -n 5 --harness claude
-# Config struct populated, validated, passed to Run() (not yet implemented)
+# Config struct populated, validated, passed to Run()
 
 $ afk --raw "my-agent {prompt}" --harness claude
 error: --raw cannot be combined with --harness or --model
@@ -18,6 +18,12 @@ error: --sleep requires daemon mode (-d)
 
 $ afk
 error: no prompt provided and beads not active; nothing to do
+
+$ afk --beads --label backend --label-any bugfix --label-any feature
+# Labels=["backend"], LabelsAny=["bugfix","feature"]
+
+$ afk --label backend
+error: --label requires --beads
 ```
 
 Parse flags, validate constraints, exit 2 on validation failure. That's it.
@@ -37,15 +43,17 @@ fields — use zero values as "not set."
 
 ```go
 type Config struct {
-    Prompt   string
-    MaxIter  int
-    Daemon   bool
-    Sleep    time.Duration
-    Harness  string
-    Model    string
+    Prompt      string
+    MaxIter     int
+    Daemon      bool
+    Sleep       time.Duration
+    Harness     string
+    Model       string
     Raw         string
     HarnessArgs string
     Beads       bool
+    Labels      []string
+    LabelsAny   []string
 }
 ```
 
@@ -59,6 +67,8 @@ type Config struct {
 - Returns a `Config` with values populated from flags + defaults.
 - Defaults: `MaxIter=20`, `Sleep=60s`, `Harness="claude"`. Everything else
   is zero value.
+- `--label` and `--label-any` are repeatable string flags that populate
+  `Labels` and `LabelsAny` slices respectively.
 - On parse error (unknown flag, bad type): return error.
 
 ## Validate
@@ -75,6 +85,8 @@ Pure function. Takes a Config, returns nil or an actionable error message.
 | `Raw` set + `Model` set           | `--raw cannot be combined with --harness or --model`           |
 | `Sleep` changed + `Daemon` false  | `--sleep requires daemon mode (-d)`                            |
 | `Prompt` empty + `Beads` false    | `no prompt provided and beads not active; nothing to do`       |
+| `Labels` set + `Beads` false      | `--label requires --beads`                                     |
+| `LabelsAny` set + `Beads` false   | `--label-any requires --beads`                                 |
 
 Note on the `--raw` + `--harness` check: since `Harness` defaults to
 `"claude"`, we need a way to distinguish "user explicitly passed `--harness`"
