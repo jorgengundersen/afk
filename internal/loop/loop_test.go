@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 )
 
 // fakeRunner records calls and returns preconfigured results.
 type fakeRunner struct {
+	mu      sync.Mutex
 	calls   int
 	results []runResult // per-call results; cycles if exhausted
 	prompts []string
@@ -21,6 +23,8 @@ type runResult struct {
 }
 
 func (f *fakeRunner) Run(_ context.Context, prompt string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.prompts = append(f.prompts, prompt)
 	idx := f.calls
 	f.calls++
@@ -31,8 +35,15 @@ func (f *fakeRunner) Run(_ context.Context, prompt string) (int, error) {
 	return last.exitCode, last.err
 }
 
+func (f *fakeRunner) getCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 // spyLogger captures logged events.
 type spyLogger struct {
+	mu     sync.Mutex
 	events []loggedEvent
 }
 
@@ -42,10 +53,14 @@ type loggedEvent struct {
 }
 
 func (s *spyLogger) Log(event string, fields map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.events = append(s.events, loggedEvent{event: event, fields: fields})
 }
 
 func (s *spyLogger) eventNames() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	names := make([]string, len(s.events))
 	for i, e := range s.events {
 		names[i] = e.event
@@ -483,7 +498,7 @@ func TestWorkSource_DaemonRetriesOnNoWork(t *testing.T) {
 	go func() {
 		for {
 			time.Sleep(5 * time.Millisecond)
-			if runner.calls >= 1 {
+			if runner.getCalls() >= 1 {
 				cancel()
 				return
 			}
@@ -498,7 +513,7 @@ func TestWorkSource_DaemonRetriesOnNoWork(t *testing.T) {
 		t.Fatalf("expected exit code 0, got %d", exitCode)
 	}
 	// Runner should have been called with the work from the second Next() call
-	if runner.calls < 1 {
+	if runner.getCalls() < 1 {
 		t.Errorf("expected at least 1 runner call, got %d", runner.calls)
 	}
 	if runner.prompts[0] != "work" {
@@ -617,7 +632,7 @@ func TestWorkSource_ErrorDaemonRetriesAfterSleep(t *testing.T) {
 	go func() {
 		for {
 			time.Sleep(5 * time.Millisecond)
-			if runner.calls >= 1 {
+			if runner.getCalls() >= 1 {
 				cancel()
 				return
 			}
@@ -642,8 +657,8 @@ func TestWorkSource_ErrorDaemonRetriesAfterSleep(t *testing.T) {
 	if !foundErr {
 		t.Errorf("expected work-source-error event, got events: %v", logger.eventNames())
 	}
-	if runner.calls < 1 {
-		t.Errorf("expected at least 1 runner call after retry, got %d", runner.calls)
+	if runner.getCalls() < 1 {
+		t.Errorf("expected at least 1 runner call after retry, got %d", runner.getCalls())
 	}
 }
 
