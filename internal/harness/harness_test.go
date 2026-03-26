@@ -1,9 +1,12 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -266,11 +269,45 @@ func TestClaudeArgsIncludeStreamJSONWithModelAndHarnessArgs(t *testing.T) {
 	}
 }
 
-func TestClaudeStdoutReadable(t *testing.T) {
-	r, _ := New("claude", "", "", "")
-	c := r.(*Claude)
-	if c.Stdout() == nil {
-		t.Fatal("expected Claude.Stdout() to return a non-nil io.Reader")
+// --- Claude.Run rendering integration ---
+
+func TestClaudeRunRendersStreamEvents(t *testing.T) {
+	// Create a helper script that emits stream-json lines to stdout
+	dir := t.TempDir()
+	helper := dir + "/fake-claude"
+	script := `#!/bin/sh
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello from fake claude"}]}}'
+echo '{"type":"result","cost_usd":0.005,"duration_ms":2000,"result":"done","is_error":false}'
+`
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	pr, pw := io.Pipe()
+	var buf bytes.Buffer
+	c := &Claude{
+		pr:     pr,
+		pw:     pw,
+		output: &buf,
+	}
+
+	// Override the binary name by using buildCmd directly won't work,
+	// so we test via a Raw-like approach: build a command manually.
+	// Instead, test the render wiring by writing directly to the pipe.
+	go func() {
+		pw.Write([]byte(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello from test"}]}}` + "\n"))
+		pw.Write([]byte(`{"type":"result","cost_usd":0.005,"duration_ms":2000,"result":"done","is_error":false}` + "\n"))
+		pw.Close()
+	}()
+
+	c.renderOutput(context.Background())
+
+	got := buf.String()
+	if !strings.Contains(got, "hello from test") {
+		t.Fatalf("expected rendered text, got %q", got)
+	}
+	if !strings.Contains(got, "[done]") {
+		t.Fatalf("expected done summary, got %q", got)
 	}
 }
 

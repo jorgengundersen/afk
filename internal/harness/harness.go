@@ -20,12 +20,7 @@ type Claude struct {
 	harnessArgs string
 	pr          *io.PipeReader
 	pw          *io.PipeWriter
-}
-
-// Stdout returns the reader end of the pipe connected to Claude's stdout.
-// The parser (next layer) consumes the structured JSON stream from this reader.
-func (c *Claude) Stdout() io.Reader {
-	return c.pr
+	output      io.Writer // where rendered events are written; defaults to os.Stdout
 }
 
 func (c *Claude) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
@@ -38,10 +33,31 @@ func (c *Claude) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
 	return cmd
 }
 
+// renderOutput parses the structured JSON stream from the pipe reader and
+// renders each event to the output writer. It blocks until the reader is
+// exhausted or ctx is cancelled.
+func (c *Claude) renderOutput(ctx context.Context) {
+	w := c.output
+	if w == nil {
+		w = os.Stdout
+	}
+	r := NewRenderer(w)
+	r.RenderStream(ctx, c.pr)
+}
+
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
 	cmd := c.buildCmd(ctx, prompt)
-	defer c.pw.Close()
-	return runCmd(ctx, cmd)
+
+	done := make(chan struct{})
+	go func() {
+		c.renderOutput(ctx)
+		close(done)
+	}()
+
+	exitCode, err := runCmd(ctx, cmd)
+	c.pw.Close() // signal EOF to reader
+	<-done       // wait for renderer to drain
+	return exitCode, err
 }
 
 // OpenCode invokes the opencode CLI in headless mode.
