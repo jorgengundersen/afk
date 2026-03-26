@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -136,6 +138,67 @@ func TestBeadsWorkSourceReadyError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("expected error to contain 'connection refused', got %q", err.Error())
+	}
+}
+
+// fakeBD creates a shell script that mimics "bd ready --json" output and
+// returns the directory containing it (to prepend to PATH).
+func fakeBD(t *testing.T, jsonOutput string) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "bd")
+	content := "#!/bin/sh\necho '" + jsonOutput + "'\n"
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestRunBeadsHappyPath(t *testing.T) {
+	bin := build(t)
+
+	issueJSON := `[{"id":"afk-42","title":"Fix tests","description":"broken","status":"open","priority":1,"issue_type":"bug"}]`
+	bdDir := fakeBD(t, issueJSON)
+
+	cmd := exec.Command(bin, "--beads", "--raw", "echo {prompt}", "-n", "1")
+	cmd.Env = append(os.Environ(), "PATH="+bdDir+":"+os.Getenv("PATH"))
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			t.Fatalf("expected exit 0, got exit %d\nstderr: %s", exitErr.ExitCode(), exitErr.Stderr)
+		}
+		t.Fatalf("expected exit 0, got error: %v", err)
+	}
+
+	got := string(out)
+
+	// Verify the prompt contains the issue instruction
+	if !strings.Contains(got, "You have been assigned the following issue") {
+		t.Errorf("output should contain issue instruction, got %q", got)
+	}
+
+	// Verify the prompt contains the issue JSON
+	if !strings.Contains(got, "afk-42") {
+		t.Errorf("output should contain issue ID, got %q", got)
+	}
+	if !strings.Contains(got, "Fix tests") {
+		t.Errorf("output should contain issue title, got %q", got)
+	}
+}
+
+func TestRunBeadsNoWork(t *testing.T) {
+	bin := build(t)
+
+	bdDir := fakeBD(t, "[]")
+
+	cmd := exec.Command(bin, "--beads", "--raw", "echo {prompt}", "-n", "1")
+	cmd.Env = append(os.Environ(), "PATH="+bdDir+":"+os.Getenv("PATH"))
+	err := cmd.Run()
+
+	// When there's no work, the loop exits cleanly with code 0
+	if err != nil {
+		t.Fatalf("expected exit 0, got error: %v", err)
 	}
 }
 
