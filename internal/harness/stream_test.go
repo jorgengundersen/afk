@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
@@ -120,6 +121,21 @@ func TestParseStreamSkipsMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestParseStreamWarnsMalformedJSON(t *testing.T) {
+	input := "not json\n" + `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}` + "\n"
+	r := strings.NewReader(input)
+
+	var warn bytes.Buffer
+	ch := ParseStream(context.Background(), r, &warn)
+	for range ch {
+	}
+
+	got := warn.String()
+	if !strings.Contains(got, "skipping malformed JSON") {
+		t.Errorf("expected malformed JSON warning, got %q", got)
+	}
+}
+
 func TestParseStreamSkipsUnknownEventType(t *testing.T) {
 	input := `{"type":"system","data":"something"}` + "\n" +
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
@@ -132,6 +148,25 @@ func TestParseStreamSkipsUnknownEventType(t *testing.T) {
 	}
 	if events[0].Type != EventAssistant {
 		t.Fatalf("expected type %q, got %q", EventAssistant, events[0].Type)
+	}
+}
+
+func TestParseStreamWarnsUnknownEventType(t *testing.T) {
+	input := `{"type":"system","data":"something"}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}` + "\n"
+	r := strings.NewReader(input)
+
+	var warn bytes.Buffer
+	ch := ParseStream(context.Background(), r, &warn)
+	for range ch {
+	}
+
+	got := warn.String()
+	if !strings.Contains(got, "skipping unknown event type") {
+		t.Errorf("expected unknown event type warning, got %q", got)
+	}
+	if !strings.Contains(got, "system") {
+		t.Errorf("expected warning to include event type name, got %q", got)
 	}
 }
 

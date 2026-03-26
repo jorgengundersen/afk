@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 )
 
 const maxInputDisplay = 200
@@ -20,7 +21,7 @@ func NewRenderer(w io.Writer) *Renderer {
 
 // RenderStream parses a Claude JSON stream and renders each event as it arrives.
 func (r *Renderer) RenderStream(ctx context.Context, reader io.Reader) {
-	for ev := range ParseStream(ctx, reader) {
+	for ev := range ParseStream(ctx, reader, os.Stderr) {
 		r.Render(ev)
 	}
 }

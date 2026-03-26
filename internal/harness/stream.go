@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 )
 
@@ -67,7 +68,13 @@ type rawEvent struct {
 // ParseStream reads newline-delimited JSON from r and sends parsed events
 // to the returned channel. The channel is closed when r is exhausted or
 // ctx is cancelled. Malformed lines and unknown event types are skipped.
-func ParseStream(ctx context.Context, r io.Reader) <-chan Event {
+// If warn is non-nil, a message is written for each skipped line.
+func ParseStream(ctx context.Context, r io.Reader, warn ...io.Writer) <-chan Event {
+	var w io.Writer
+	if len(warn) > 0 {
+		w = warn[0]
+	}
+
 	ch := make(chan Event)
 	go func() {
 		defer close(ch)
@@ -86,12 +93,18 @@ func ParseStream(ctx context.Context, r io.Reader) <-chan Event {
 
 			var raw rawEvent
 			if err := json.Unmarshal(line, &raw); err != nil {
-				continue // skip malformed JSON
+				if w != nil {
+					fmt.Fprintf(w, "skipping malformed JSON: %s\n", line)
+				}
+				continue
 			}
 
 			ev, ok := parseRawEvent(raw)
 			if !ok {
-				continue // skip unknown event types
+				if w != nil {
+					fmt.Fprintf(w, "skipping unknown event type: %s\n", raw.Type)
+				}
+				continue
 			}
 
 			select {

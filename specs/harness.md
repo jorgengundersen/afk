@@ -97,8 +97,8 @@ terminates the entire tree, not just the direct child.
 | OpenCode harness runs subprocess | Subprocess stdout/stderr are inherited by the terminal |
 | Raw harness runs subprocess | Subprocess stdout/stderr are inherited by the terminal |
 | Agent text contains raw content (newlines, whitespace) | Text is formatted for human-readable terminal output |
-| Structured stream contains an unknown event | Event is silently skipped |
-| Structured stream contains malformed JSON | Line is skipped, processing continues |
+| Structured stream contains an unknown event | Event is skipped, warning written to stderr |
+| Structured stream contains malformed JSON | Line is skipped, warning written to stderr |
 | Context is cancelled mid-stream | Output processing stops promptly, partial output is fine |
 
 ### What this does NOT do
