@@ -32,7 +32,7 @@ func main() {
 	log := logger.New(logPath)
 	defer log.Close()
 
-	assembled, err := prompt.Assemble(cfg.Prompt)
+	assembled, err := prompt.Assemble(cfg.Prompt, "")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
