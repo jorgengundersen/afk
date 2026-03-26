@@ -225,15 +225,52 @@ func TestRawInheritsStdoutStderr(t *testing.T) {
 	}
 }
 
-func TestClaudeStderrInheritedStdoutNil(t *testing.T) {
+func TestClaudeStderrInheritedStdoutPiped(t *testing.T) {
 	r, _ := New("claude", "", "", "")
 	c := r.(*Claude)
 	cmd := c.buildCmd(context.Background(), "hello")
-	if cmd.Stdout != nil {
-		t.Fatal("expected Claude cmd.Stdout to be nil")
+	if cmd.Stdout == nil || cmd.Stdout == os.Stdout {
+		t.Fatal("expected Claude cmd.Stdout to be a pipe (not nil or os.Stdout)")
 	}
 	if cmd.Stderr != os.Stderr {
 		t.Fatal("expected Claude cmd.Stderr to be os.Stderr")
+	}
+}
+
+func TestClaudeArgsIncludeStreamJSON(t *testing.T) {
+	r, _ := New("claude", "", "", "")
+	c := r.(*Claude)
+	cmd := c.buildCmd(context.Background(), "hello")
+	args := cmd.Args[1:] // skip binary name
+	found := false
+	for i, a := range args {
+		if a == "--output-format" && i+1 < len(args) && args[i+1] == "stream-json" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --output-format stream-json in args, got %v", args)
+	}
+}
+
+func TestClaudeArgsIncludeStreamJSONWithModelAndHarnessArgs(t *testing.T) {
+	r, _ := New("claude", "sonnet", "", "--verbose")
+	c := r.(*Claude)
+	cmd := c.buildCmd(context.Background(), "hello")
+	args := cmd.Args[1:]
+	// Verify all expected args are present
+	want := []string{"-p", "hello", "--model", "sonnet", "--verbose", "--output-format", "stream-json"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("expected args %v, got %v", want, args)
+	}
+}
+
+func TestClaudeStdoutReadable(t *testing.T) {
+	r, _ := New("claude", "", "", "")
+	c := r.(*Claude)
+	if c.Stdout() == nil {
+		t.Fatal("expected Claude.Stdout() to return a non-nil io.Reader")
 	}
 }
 

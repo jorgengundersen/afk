@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,23 +14,34 @@ type Runner interface {
 	Run(ctx context.Context, prompt string) (exitCode int, err error)
 }
 
-// Claude invokes the claude CLI in headless mode.
+// Claude invokes the claude CLI in headless mode with structured JSON streaming.
 type Claude struct {
 	model       string
 	harnessArgs string
+	pr          *io.PipeReader
+	pw          *io.PipeWriter
+}
+
+// Stdout returns the reader end of the pipe connected to Claude's stdout.
+// The parser (next layer) consumes the structured JSON stream from this reader.
+func (c *Claude) Stdout() io.Reader {
+	return c.pr
 }
 
 func (c *Claude) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
 	args := agentArgs(prompt, c.model, c.harnessArgs)
+	args = append(args, "--output-format", "stream-json")
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = nil
-	cmd.Stdout = nil
+	cmd.Stdout = c.pw
 	cmd.Stderr = os.Stderr
 	return cmd
 }
 
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
-	return runCmd(ctx, c.buildCmd(ctx, prompt))
+	cmd := c.buildCmd(ctx, prompt)
+	defer c.pw.Close()
+	return runCmd(ctx, cmd)
 }
 
 // OpenCode invokes the opencode CLI in headless mode.
@@ -117,7 +129,8 @@ func New(harness, model, raw, harnessArgs string) (Runner, error) {
 	}
 	switch harness {
 	case "claude":
-		return &Claude{model: model, harnessArgs: harnessArgs}, nil
+		pr, pw := io.Pipe()
+		return &Claude{model: model, harnessArgs: harnessArgs, pr: pr, pw: pw}, nil
 	case "opencode":
 		return &OpenCode{model: model, harnessArgs: harnessArgs}, nil
 	default:
