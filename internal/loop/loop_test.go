@@ -61,7 +61,7 @@ func TestSingleIteration(t *testing.T) {
 		Prompt:  "test prompt",
 	}
 
-	exitCode, err := Run(context.Background(), cfg, runner, logger)
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestMultipleIterations(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 3, Prompt: "p"}
 
-	exitCode, err := Run(context.Background(), cfg, runner, logger)
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestNonZeroExitContinues(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 2, Prompt: "p"}
 
-	exitCode, err := Run(context.Background(), cfg, runner, logger)
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestLaunchFailureContinues(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 2, Prompt: "p"}
 
-	_, err := Run(context.Background(), cfg, runner, logger)
+	_, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestAllLaunchFailuresExitOne(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 2, Prompt: "p"}
 
-	exitCode, err := Run(context.Background(), cfg, runner, logger)
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestContextCancellationMidLoop(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 10, Prompt: "p"}
 
-	exitCode, err := Run(ctx, cfg, cancellingRunner, logger)
+	exitCode, err := Run(ctx, cfg, cancellingRunner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestIterationEventsBracketEachIteration(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 3, Prompt: "p"}
 
-	_, err := Run(context.Background(), cfg, runner, logger)
+	_, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestIterationEndContainsExitCodeAndDuration(t *testing.T) {
 	logger := &spyLogger{}
 	cfg := Config{MaxIter: 1, Prompt: "p"}
 
-	_, err := Run(context.Background(), cfg, runner, logger)
+	_, err := Run(context.Background(), cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestDaemonWakingEventLogged(t *testing.T) {
 		MaxIter: 20,
 	}
 
-	_, err := Run(ctx, cfg, runner, logger)
+	_, err := Run(ctx, cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestDaemonSleepsBetweenIterations(t *testing.T) {
 		MaxIter: 20,
 	}
 
-	exitCode, err := Run(ctx, cfg, runner, logger)
+	exitCode, err := Run(ctx, cfg, runner, logger, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestDaemonSleepInterrupted(t *testing.T) {
 	}()
 
 	start := time.Now()
-	exitCode, err := Run(ctx, cfg, runner, logger)
+	exitCode, err := Run(ctx, cfg, runner, logger, nil)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -381,5 +381,195 @@ func TestDaemonSleepInterrupted(t *testing.T) {
 	lastEvent := logger.events[len(logger.events)-1]
 	if lastEvent.fields["reason"] != "signal" {
 		t.Errorf("expected reason=signal, got %v", lastEvent.fields["reason"])
+	}
+}
+
+// fakeWorkSource returns preconfigured work items.
+type fakeWorkSource struct {
+	items []workItem
+	calls int
+}
+
+type workItem struct {
+	prompt  string
+	id      string
+	title   string
+	hasWork bool
+}
+
+func (f *fakeWorkSource) Next() (prompt string, issueID string, issueTitle string, ok bool) {
+	idx := f.calls
+	f.calls++
+	if idx < len(f.items) {
+		w := f.items[idx]
+		return w.prompt, w.id, w.title, w.hasWork
+	}
+	return "", "", "", false
+}
+
+func TestWorkSource_UsesReturnedPrompt(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 1, Prompt: "static prompt"}
+	ws := &fakeWorkSource{items: []workItem{
+		{prompt: "dynamic prompt", id: "afk-1", title: "Fix bug", hasWork: true},
+	}}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	if runner.prompts[0] != "dynamic prompt" {
+		t.Errorf("expected dynamic prompt, got %q", runner.prompts[0])
+	}
+}
+
+func TestWorkSource_NoWorkExitsMaxIter(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 5, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{hasWork: false},
+	}}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	if runner.calls != 0 {
+		t.Errorf("expected 0 runner calls, got %d", runner.calls)
+	}
+	// Should have session-end with reason=no-work
+	lastEvent := logger.events[len(logger.events)-1]
+	if lastEvent.fields["reason"] != "no-work" {
+		t.Errorf("expected reason=no-work, got %v", lastEvent.fields["reason"])
+	}
+}
+
+func TestWorkSource_DaemonRetriesOnNoWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 20, Daemon: true, Sleep: 10 * time.Millisecond, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{hasWork: false},
+		{prompt: "work", id: "afk-1", title: "Fix", hasWork: true},
+	}}
+
+	// Cancel after the runner gets called once
+	go func() {
+		for {
+			time.Sleep(5 * time.Millisecond)
+			if runner.calls >= 1 {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	exitCode, err := Run(ctx, cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	// Runner should have been called with the work from the second Next() call
+	if runner.calls < 1 {
+		t.Errorf("expected at least 1 runner call, got %d", runner.calls)
+	}
+	if runner.prompts[0] != "work" {
+		t.Errorf("expected prompt %q, got %q", "work", runner.prompts[0])
+	}
+}
+
+func TestWorkSource_BeadsCheckLogged(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 1, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{prompt: "work", id: "afk-1", title: "Fix", hasWork: true},
+	}}
+
+	_, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	found := false
+	for _, e := range logger.events {
+		if e.event == "beads-check" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected beads-check event, got events: %v", logger.eventNames())
+	}
+}
+
+func TestWorkSource_IterationLogsIncludeIssueInfo(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 1, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{prompt: "work", id: "afk-1", title: "Fix bug", hasWork: true},
+	}}
+
+	_, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, e := range logger.events {
+		if e.event == "iteration-start" {
+			if e.fields["issueID"] != "afk-1" {
+				t.Errorf("iteration-start issueID = %v, want afk-1", e.fields["issueID"])
+			}
+			if e.fields["issueTitle"] != "Fix bug" {
+				t.Errorf("iteration-start issueTitle = %v, want Fix bug", e.fields["issueTitle"])
+			}
+		}
+		if e.event == "iteration-end" {
+			if e.fields["issueID"] != "afk-1" {
+				t.Errorf("iteration-end issueID = %v, want afk-1", e.fields["issueID"])
+			}
+			if e.fields["issueTitle"] != "Fix bug" {
+				t.Errorf("iteration-end issueTitle = %v, want Fix bug", e.fields["issueTitle"])
+			}
+		}
+	}
+}
+
+func TestWorkSource_NilPreservesExistingBehaviour(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 2, Prompt: "static"}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	if runner.calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", runner.calls)
+	}
+	if runner.prompts[0] != "static" {
+		t.Errorf("expected static prompt, got %q", runner.prompts[0])
+	}
+
+	// No beads-check events should be logged
+	for _, e := range logger.events {
+		if e.event == "beads-check" {
+			t.Error("beads-check should not be logged when WorkSource is nil")
+		}
 	}
 }

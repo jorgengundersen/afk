@@ -59,7 +59,7 @@ func main() {
 		Prompt:  assembled,
 	}
 
-	exitCode, err := loop.Run(ctx, loopCfg, runner, log)
+	exitCode, err := loop.Run(ctx, loopCfg, runner, log, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 	}
