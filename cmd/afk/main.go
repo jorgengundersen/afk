@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jorgengundersen/afk/internal/beads"
 	"github.com/jorgengundersen/afk/internal/config"
 	"github.com/jorgengundersen/afk/internal/harness"
 	"github.com/jorgengundersen/afk/internal/logger"
@@ -32,15 +33,35 @@ func main() {
 	log := logger.New(logPath)
 	defer log.Close()
 
-	assembled, err := prompt.Assemble(cfg.Prompt, "")
-	if err != nil {
+	if err := harness.CheckBinary(cfg.Harness, cfg.Raw); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(2)
 	}
 
-	if err := harness.CheckBinary(cfg.Harness, cfg.Raw); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
+	if cfg.Beads {
+		if err := beads.CheckBinaryInPath(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(2)
+		}
+	}
+
+	var ws loop.WorkSource
+	if cfg.Beads {
+		client := beads.NewClient(cfg.Labels, cfg.LabelsAny)
+		ws = &beadsWorkSource{
+			client:     &beadsClientAdapter{inner: &client},
+			userPrompt: cfg.Prompt,
+		}
+	}
+
+	// When not using beads, assemble the static prompt
+	var assembled string
+	if !cfg.Beads {
+		assembled, err = prompt.Assemble(cfg.Prompt, "")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(2)
+		}
 	}
 
 	runner, err := harness.New(cfg.Harness, cfg.Model, cfg.Raw, cfg.HarnessArgs)
@@ -59,9 +80,63 @@ func main() {
 		Prompt:  assembled,
 	}
 
-	exitCode, err := loop.Run(ctx, loopCfg, runner, log, nil)
+	exitCode, err := loop.Run(ctx, loopCfg, runner, log, ws)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 	}
 	os.Exit(exitCode)
+}
+
+// issueResult is the interface-compatible issue type for the adapter.
+type issueResult struct {
+	ID      string
+	Title   string
+	RawJSON []byte
+}
+
+// readyClient abstracts the beads client for testability.
+type readyClient interface {
+	Ready() ([]issueResult, error)
+}
+
+// beadsClientAdapter wraps the real beads.Client to satisfy readyClient.
+type beadsClientAdapter struct {
+	inner *beads.Client
+}
+
+func (a *beadsClientAdapter) Ready() ([]issueResult, error) {
+	issues, err := a.inner.Ready()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]issueResult, len(issues))
+	for i, iss := range issues {
+		results[i] = issueResult{
+			ID:      iss.ID,
+			Title:   iss.Title,
+			RawJSON: iss.RawJSON,
+		}
+	}
+	return results, nil
+}
+
+// beadsWorkSource implements loop.WorkSource by fetching from beads and assembling prompts.
+type beadsWorkSource struct {
+	client     readyClient
+	userPrompt string
+}
+
+func (b *beadsWorkSource) Next() (promptStr string, issueID string, issueTitle string, ok bool) {
+	issues, err := b.client.Ready()
+	if err != nil || len(issues) == 0 {
+		return "", "", "", false
+	}
+
+	top := issues[0]
+	assembled, err := prompt.Assemble(b.userPrompt, string(top.RawJSON))
+	if err != nil {
+		return "", "", "", false
+	}
+
+	return assembled, top.ID, top.Title, true
 }

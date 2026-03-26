@@ -49,6 +49,65 @@ func TestRunRawHarness(t *testing.T) {
 	}
 }
 
+func TestBeadsWorkSourceReturnsWork(t *testing.T) {
+	ws := &beadsWorkSource{
+		client: &fakeBeadsClient{
+			issues: []fakeIssue{
+				{id: "afk-1", title: "Fix bug", rawJSON: `{"id":"afk-1","title":"Fix bug"}`},
+			},
+		},
+		userPrompt: "focus on tests",
+	}
+
+	prompt, id, title, ok := ws.Next()
+	if !ok {
+		t.Fatal("expected work to be available")
+	}
+	if id != "afk-1" {
+		t.Errorf("issueID = %q, want %q", id, "afk-1")
+	}
+	if title != "Fix bug" {
+		t.Errorf("issueTitle = %q, want %q", title, "Fix bug")
+	}
+	if prompt == "" {
+		t.Error("prompt should not be empty")
+	}
+}
+
+func TestBeadsWorkSourceNoWork(t *testing.T) {
+	ws := &beadsWorkSource{
+		client:     &fakeBeadsClient{issues: nil},
+		userPrompt: "",
+	}
+
+	_, _, _, ok := ws.Next()
+	if ok {
+		t.Error("expected no work available")
+	}
+}
+
+type fakeIssue struct {
+	id      string
+	title   string
+	rawJSON string
+}
+
+type fakeBeadsClient struct {
+	issues []fakeIssue
+}
+
+func (f *fakeBeadsClient) Ready() ([]issueResult, error) {
+	var results []issueResult
+	for _, i := range f.issues {
+		results = append(results, issueResult{
+			ID:      i.id,
+			Title:   i.title,
+			RawJSON: []byte(i.rawJSON),
+		})
+	}
+	return results, nil
+}
+
 func TestHarnessBinaryNotFound(t *testing.T) {
 	bin := build(t)
 
