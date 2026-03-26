@@ -626,25 +626,28 @@ func TestWorkSource_IterationLogsIncludeIssueInfo(t *testing.T) {
 	}
 }
 
-func TestWorkSource_ErrorExitsNonZeroMaxIter(t *testing.T) {
+func TestWorkSource_ErrorContinuesMaxIter(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
 	logger := &spyLogger{}
-	cfg := Config{MaxIter: 5, Prompt: "p"}
+	cfg := Config{MaxIter: 3, Prompt: "p"}
 	ws := &fakeWorkSource{items: []workItem{
 		{err: errors.New("bd: connection refused")},
+		{prompt: "work", id: "afk-1", title: "Fix", hasWork: true},
+		{prompt: "work2", id: "afk-2", title: "Fix2", hasWork: true},
 	}}
 
 	exitCode, err := Run(context.Background(), cfg, runner, logger, ws)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitCode)
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0 (partial success), got %d", exitCode)
 	}
-	if runner.calls != 0 {
-		t.Errorf("expected 0 runner calls, got %d", runner.calls)
+	// Runner should have been called for the two successful work items
+	if runner.getCalls() != 2 {
+		t.Fatalf("expected 2 runner calls, got %d", runner.getCalls())
 	}
-	// Should log work-source-error
+	// Should log work-source-error for the failed attempt
 	found := false
 	for _, e := range logger.events {
 		if e.event == "work-source-error" {
@@ -658,10 +661,26 @@ func TestWorkSource_ErrorExitsNonZeroMaxIter(t *testing.T) {
 	if !found {
 		t.Errorf("expected work-source-error event, got events: %v", logger.eventNames())
 	}
-	// Session-end reason should be work-source-error
-	lastEvent := logger.events[len(logger.events)-1]
-	if lastEvent.fields["reason"] != "work-source-error" {
-		t.Errorf("expected reason=work-source-error, got %v", lastEvent.fields["reason"])
+}
+
+func TestWorkSource_AllErrorsExitOneMaxIter(t *testing.T) {
+	runner := &fakeRunner{results: []runResult{{exitCode: 0}}}
+	logger := &spyLogger{}
+	cfg := Config{MaxIter: 2, Prompt: "p"}
+	ws := &fakeWorkSource{items: []workItem{
+		{err: errors.New("bd: connection refused")},
+		{err: errors.New("bd: timeout")},
+	}}
+
+	exitCode, err := Run(context.Background(), cfg, runner, logger, ws)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1 when all iterations fail, got %d", exitCode)
+	}
+	if runner.getCalls() != 0 {
+		t.Errorf("expected 0 runner calls, got %d", runner.getCalls())
 	}
 }
 

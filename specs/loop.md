@@ -73,6 +73,9 @@ dependencies.
   exit code 1.
 - When a work source is present and returns no work, the loop exits with
   reason "no-work" and exit code 0.
+- When a work source returns an error, the loop logs a `work-source-error`
+  event and treats it as a failed iteration — it counts toward the iteration
+  limit and toward the all-failed check, but does not stop the loop.
 - The beads-check event is logged with the issue count each time the work
   source is consulted.
 
@@ -85,6 +88,9 @@ dependencies.
   immediately and exit.
 - When a work source is present and returns no work, the loop sleeps and
   retries on the next cycle instead of exiting.
+- When a work source returns an error, the loop logs a `work-source-error`
+  event, sleeps, and retries — same as the no-work case. WorkSource errors
+  do not count as iterations (no runner invocation occurred).
 - If ALL iterations had launch failures or non-zero exit codes, return
   exit code 1 (same as max-iterations mode).
 

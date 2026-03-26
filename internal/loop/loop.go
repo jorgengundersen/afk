@@ -65,10 +65,8 @@ func runMaxIter(ctx context.Context, cfg Config, runner Runner, logger Logger, w
 				if err := logger.Log("work-source-error", map[string]any{"err": wsErr.Error()}); err != nil {
 					return 1, logErr(err)
 				}
-				if err := logger.Log("session-end", map[string]any{"reason": "work-source-error"}); err != nil {
-					return 1, logErr(err)
-				}
-				return 1, nil
+				iterations++
+				continue
 			}
 			if err := logger.Log("beads-check", map[string]any{"hasWork": ok}); err != nil {
 				return 1, logErr(err)
