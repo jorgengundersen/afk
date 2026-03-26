@@ -166,6 +166,70 @@ func TestValidate_ValidWithBeads(t *testing.T) {
 	}
 }
 
+func TestParseFlags_RepeatableLabels(t *testing.T) {
+	args := []string{
+		"--beads",
+		"--label", "backend",
+		"--label", "infra",
+		"--label-any", "bugfix",
+		"--label-any", "feature",
+	}
+	cfg, err := ParseFlags(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Labels) != 2 || cfg.Labels[0] != "backend" || cfg.Labels[1] != "infra" {
+		t.Errorf("Labels = %v, want [backend infra]", cfg.Labels)
+	}
+	if len(cfg.LabelsAny) != 2 || cfg.LabelsAny[0] != "bugfix" || cfg.LabelsAny[1] != "feature" {
+		t.Errorf("LabelsAny = %v, want [bugfix feature]", cfg.LabelsAny)
+	}
+}
+
+func TestParseFlags_LabelsDefaultEmpty(t *testing.T) {
+	cfg, err := ParseFlags([]string{"-p", "hi"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Labels != nil {
+		t.Errorf("Labels = %v, want nil", cfg.Labels)
+	}
+	if cfg.LabelsAny != nil {
+		t.Errorf("LabelsAny = %v, want nil", cfg.LabelsAny)
+	}
+}
+
+func TestValidate_LabelWithoutBeads(t *testing.T) {
+	cfg := Config{Prompt: "x", Labels: []string{"backend"}}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for --label without --beads")
+	}
+	want := "--label requires --beads"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_LabelAnyWithoutBeads(t *testing.T) {
+	cfg := Config{Prompt: "x", LabelsAny: []string{"bugfix"}}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("expected error for --label-any without --beads")
+	}
+	want := "--label-any requires --beads"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestValidate_LabelsWithBeads(t *testing.T) {
+	cfg := Config{Beads: true, Labels: []string{"backend"}, LabelsAny: []string{"bugfix"}}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseFlags_SetFlags_NotSetByDefault(t *testing.T) {
 	cfg, err := ParseFlags([]string{"-p", "hi"})
 	if err != nil {

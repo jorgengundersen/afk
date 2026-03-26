@@ -17,9 +17,19 @@ type Config struct {
 	Raw         string
 	HarnessArgs string
 	Beads       bool
+	Labels      []string
+	LabelsAny   []string
 
 	HarnessSet bool
 	SleepSet   bool
+}
+
+type stringSliceFlag []string
+
+func (f *stringSliceFlag) String() string { return "" }
+func (f *stringSliceFlag) Set(val string) error {
+	*f = append(*f, val)
+	return nil
 }
 
 func ParseFlags(args []string) (Config, error) {
@@ -37,8 +47,20 @@ func ParseFlags(args []string) (Config, error) {
 	fs.StringVar(&cfg.HarnessArgs, "harness-args", "", "extra arguments for the harness subprocess")
 	fs.BoolVar(&cfg.Beads, "beads", false, "use beads for issue tracking")
 
+	var labels stringSliceFlag
+	var labelsAny stringSliceFlag
+	fs.Var(&labels, "label", "label filter (AND, repeatable)")
+	fs.Var(&labelsAny, "label-any", "label filter (OR, repeatable)")
+
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
+	}
+
+	if len(labels) > 0 {
+		cfg.Labels = []string(labels)
+	}
+	if len(labelsAny) > 0 {
+		cfg.LabelsAny = []string(labelsAny)
 	}
 
 	fs.Visit(func(f *flag.Flag) {
@@ -62,6 +84,12 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Prompt == "" && !cfg.Beads {
 		return errors.New("no prompt provided and beads not active; nothing to do")
+	}
+	if len(cfg.Labels) > 0 && !cfg.Beads {
+		return errors.New("--label requires --beads")
+	}
+	if len(cfg.LabelsAny) > 0 && !cfg.Beads {
+		return errors.New("--label-any requires --beads")
 	}
 	return nil
 }
