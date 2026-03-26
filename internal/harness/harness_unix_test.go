@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -13,12 +14,9 @@ import (
 	"time"
 )
 
-// TestRunAgentUsesRunCmd verifies that runAgent delegates to runCmd by
-// checking that context cancellation returns context.Canceled — the
-// signature behaviour of runCmd's process group cleanup path.
-// Without runCmd, exec.CommandContext returns a generic exec error.
-func TestRunAgentUsesRunCmd(t *testing.T) {
-	// Create a helper script that ignores arguments and sleeps.
+// TestRunCmdContextCancelReturnsContextCanceled verifies that runCmd's
+// process group cleanup path returns context.Canceled on cancellation.
+func TestRunCmdContextCancelReturnsContextCanceled(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "sleeper")
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\nsleep 60\n"), 0o755); err != nil {
@@ -31,7 +29,8 @@ func TestRunAgentUsesRunCmd(t *testing.T) {
 	done := make(chan struct{})
 	var runErr error
 	go func() {
-		_, runErr = runAgent(ctx, helper, "ignored", "", "")
+		cmd := exec.CommandContext(ctx, helper)
+		_, runErr = runCmd(ctx, cmd)
 		close(done)
 	}()
 

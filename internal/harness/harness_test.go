@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -125,10 +126,13 @@ func TestAgentArgsWithModelAndHarnessArgs(t *testing.T) {
 	}
 }
 
-// --- runAgent integration tests (subprocess lifecycle) ---
+// --- Runner.Run subprocess lifecycle tests ---
 
-func TestRunAgentExitCode0(t *testing.T) {
-	exitCode, err := runAgent(context.Background(), "true", "ignored", "", "")
+func TestClaudeRunExitCode0(t *testing.T) {
+	// Use a Claude runner with "true" as the binary won't be found,
+	// so test via Raw which exercises the same runCmd path.
+	r := &Raw{template: "true"}
+	exitCode, err := r.Run(context.Background(), "ignored")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,30 +141,14 @@ func TestRunAgentExitCode0(t *testing.T) {
 	}
 }
 
-func TestRunAgentExitCode1(t *testing.T) {
-	exitCode, err := runAgent(context.Background(), "false", "ignored", "", "")
+func TestRawRunExitCode1ViaRunCmd(t *testing.T) {
+	r := &Raw{template: "false"}
+	exitCode, err := r.Run(context.Background(), "ignored")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if exitCode != 1 {
 		t.Fatalf("expected exit code 1, got %d", exitCode)
-	}
-}
-
-func TestRunAgentBinaryNotFound(t *testing.T) {
-	_, err := runAgent(context.Background(), "nonexistent-binary-xyz", "hello", "", "")
-	if err == nil {
-		t.Fatal("expected error for missing binary")
-	}
-}
-
-func TestRunAgentContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	_, err := runAgent(ctx, "sleep", "10", "", "")
-	if err == nil {
-		t.Fatal("expected error for cancelled context")
 	}
 }
 
@@ -208,6 +196,44 @@ func TestRawRunContextCancellation(t *testing.T) {
 	_, err := r.Run(ctx, "ignored")
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
+	}
+}
+
+// --- Output passthrough tests ---
+
+func TestOpenCodeInheritsStdoutStderr(t *testing.T) {
+	r, _ := New("opencode", "", "", "")
+	oc := r.(*OpenCode)
+	cmd := oc.buildCmd(context.Background(), "hello")
+	if cmd.Stdout != os.Stdout {
+		t.Fatal("expected OpenCode cmd.Stdout to be os.Stdout")
+	}
+	if cmd.Stderr != os.Stderr {
+		t.Fatal("expected OpenCode cmd.Stderr to be os.Stderr")
+	}
+}
+
+func TestRawInheritsStdoutStderr(t *testing.T) {
+	r, _ := New("", "", "echo {prompt}", "")
+	raw := r.(*Raw)
+	cmd := raw.buildCmd(context.Background(), "hello")
+	if cmd.Stdout != os.Stdout {
+		t.Fatal("expected Raw cmd.Stdout to be os.Stdout")
+	}
+	if cmd.Stderr != os.Stderr {
+		t.Fatal("expected Raw cmd.Stderr to be os.Stderr")
+	}
+}
+
+func TestClaudeStderrInheritedStdoutNil(t *testing.T) {
+	r, _ := New("claude", "", "", "")
+	c := r.(*Claude)
+	cmd := c.buildCmd(context.Background(), "hello")
+	if cmd.Stdout != nil {
+		t.Fatal("expected Claude cmd.Stdout to be nil")
+	}
+	if cmd.Stderr != os.Stderr {
+		t.Fatal("expected Claude cmd.Stderr to be os.Stderr")
 	}
 }
 

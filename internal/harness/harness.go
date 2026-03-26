@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -18,8 +19,17 @@ type Claude struct {
 	harnessArgs string
 }
 
+func (c *Claude) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
+	args := agentArgs(prompt, c.model, c.harnessArgs)
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = os.Stderr
+	return cmd
+}
+
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
-	return runAgent(ctx, "claude", prompt, c.model, c.harnessArgs)
+	return runCmd(ctx, c.buildCmd(ctx, prompt))
 }
 
 // OpenCode invokes the opencode CLI in headless mode.
@@ -28,8 +38,17 @@ type OpenCode struct {
 	harnessArgs string
 }
 
+func (o *OpenCode) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
+	args := agentArgs(prompt, o.model, o.harnessArgs)
+	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd.Stdin = nil
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
+}
+
 func (o *OpenCode) Run(ctx context.Context, prompt string) (int, error) {
-	return runAgent(ctx, "opencode", prompt, o.model, o.harnessArgs)
+	return runCmd(ctx, o.buildCmd(ctx, prompt))
 }
 
 // Raw executes a user-provided command template via sh -c.
@@ -37,14 +56,18 @@ type Raw struct {
 	template string
 }
 
-func (r *Raw) Run(ctx context.Context, prompt string) (int, error) {
+func (r *Raw) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
 	escaped := "'" + strings.ReplaceAll(prompt, "'", "'\"'\"'") + "'"
 	cmdStr := strings.ReplaceAll(r.template, "{prompt}", escaped)
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return runCmd(ctx, cmd)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
+}
+
+func (r *Raw) Run(ctx context.Context, prompt string) (int, error) {
+	return runCmd(ctx, r.buildCmd(ctx, prompt))
 }
 
 // agentArgs builds the argument list for a named harness invocation.
@@ -57,15 +80,6 @@ func agentArgs(prompt, model, harnessArgs string) []string {
 		args = append(args, strings.Fields(harnessArgs)...)
 	}
 	return args
-}
-
-func runAgent(ctx context.Context, binary, prompt, model, harnessArgs string) (int, error) {
-	args := agentArgs(prompt, model, harnessArgs)
-	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return runCmd(ctx, cmd)
 }
 
 // CheckBinary verifies the harness binary exists in PATH.
