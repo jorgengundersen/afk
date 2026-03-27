@@ -41,8 +41,9 @@ func (c *Claude) renderOutput(ctx context.Context) {
 	if w == nil {
 		w = os.Stdout
 	}
+	ch := ParseStream(ctx, c.pr, os.Stderr)
 	r := NewRenderer(w)
-	r.RenderStream(ctx, c.pr)
+	r.RenderStream(ch)
 }
 
 func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {

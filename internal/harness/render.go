@@ -1,10 +1,9 @@
 package harness
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"os"
+	"strings"
 )
 
 const maxInputDisplay = 200
@@ -19,9 +18,10 @@ func NewRenderer(w io.Writer) *Renderer {
 	return &Renderer{w: w}
 }
 
-// RenderStream parses a Claude JSON stream and renders each event as it arrives.
-func (r *Renderer) RenderStream(ctx context.Context, reader io.Reader) {
-	for ev := range ParseStream(ctx, reader, os.Stderr) {
+// RenderStream reads common events from ch and renders each one as it arrives.
+// It blocks until ch is closed.
+func (r *Renderer) RenderStream(ch <-chan CommonEvent) {
+	for ev := range ch {
 		r.Render(ev)
 	}
 }
@@ -58,10 +58,39 @@ func truncate(s string, max int) string {
 }
 
 func (r *Renderer) renderSummary(s *SummaryPayload) {
-	duration := float64(s.DurationMS) / 1000.0
 	if s.IsError {
-		fmt.Fprintf(r.w, "[error] %s (%.1fs, $%.4f)\n", s.Result, duration, s.CostUSD)
+		r.renderErrorSummary(s)
+		return
+	}
+
+	var parts []string
+	if s.DurationMS > 0 {
+		parts = append(parts, fmt.Sprintf("%.1fs", float64(s.DurationMS)/1000.0))
+	}
+	if s.CostUSD > 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f", s.CostUSD))
+	}
+	if s.InputTokens > 0 || s.OutputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("%d tokens in / %d tokens out", s.InputTokens, s.OutputTokens))
+	}
+	if len(parts) == 0 {
+		fmt.Fprintln(r.w, "[done]")
 	} else {
-		fmt.Fprintf(r.w, "[done] %.1fs, $%.4f\n", duration, s.CostUSD)
+		fmt.Fprintf(r.w, "[done] %s\n", strings.Join(parts, ", "))
+	}
+}
+
+func (r *Renderer) renderErrorSummary(s *SummaryPayload) {
+	var parts []string
+	if s.DurationMS > 0 {
+		parts = append(parts, fmt.Sprintf("%.1fs", float64(s.DurationMS)/1000.0))
+	}
+	if s.CostUSD > 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f", s.CostUSD))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(r.w, "[error] %s (%s)\n", s.Result, strings.Join(parts, ", "))
+	} else {
+		fmt.Fprintf(r.w, "[error] %s\n", s.Result)
 	}
 }

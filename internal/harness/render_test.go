@@ -3,7 +3,6 @@ package harness
 import (
 	"bytes"
 	"context"
-	"io"
 	"strings"
 	"testing"
 )
@@ -128,6 +127,58 @@ func TestRenderResultSummaryError(t *testing.T) {
 	}
 }
 
+func TestRenderResultSummaryWithTokens(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	ev := CommonEvent{
+		Kind: KindSummary,
+		Summary: &SummaryPayload{
+			InputTokens:  1234,
+			OutputTokens: 567,
+		},
+	}
+	r.Render(ev)
+
+	got := buf.String()
+	if !strings.Contains(got, "1234") {
+		t.Fatalf("expected input token count in output, got %q", got)
+	}
+	if !strings.Contains(got, "567") {
+		t.Fatalf("expected output token count in output, got %q", got)
+	}
+}
+
+func TestRenderResultSummaryWithAllFields(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+
+	ev := CommonEvent{
+		Kind: KindSummary,
+		Summary: &SummaryPayload{
+			DurationMS:   8100,
+			CostUSD:      0.0412,
+			InputTokens:  1234,
+			OutputTokens: 567,
+		},
+	}
+	r.Render(ev)
+
+	got := buf.String()
+	if !strings.Contains(got, "8.1s") {
+		t.Fatalf("expected duration in output, got %q", got)
+	}
+	if !strings.Contains(got, "$0.0412") {
+		t.Fatalf("expected cost in output, got %q", got)
+	}
+	if !strings.Contains(got, "1234") {
+		t.Fatalf("expected input token count in output, got %q", got)
+	}
+	if !strings.Contains(got, "567") {
+		t.Fatalf("expected output token count in output, got %q", got)
+	}
+}
+
 func TestRenderTextWithNewlines(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
@@ -178,15 +229,17 @@ func TestRenderToolUseInputTruncated(t *testing.T) {
 	}
 }
 
-func TestRenderStreamIntegration(t *testing.T) {
-	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking..."}]}}` + "\n" +
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Bash","input":{"command":"ls"}}]}}` + "\n" +
-		`{"type":"tool_result","tool_result":{"tool_use_id":"tu_1","content":"file1.go"}}` + "\n" +
-		`{"type":"result","cost_usd":0.01,"duration_ms":5000,"result":"Done","is_error":false}` + "\n"
+func TestRenderStreamFromChannel(t *testing.T) {
+	ch := make(chan CommonEvent, 4)
+	ch <- CommonEvent{Kind: KindText, Text: &TextPayload{Content: "thinking..."}}
+	ch <- CommonEvent{Kind: KindToolCall, ToolCall: &ToolCallPayload{Name: "Bash", Input: `{"command":"ls"}`}}
+	ch <- CommonEvent{Kind: KindToolOutput, ToolOutput: &ToolOutputPayload{Content: "file1.go"}}
+	ch <- CommonEvent{Kind: KindSummary, Summary: &SummaryPayload{CostUSD: 0.01, DurationMS: 5000}}
+	close(ch)
 
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
-	r.RenderStream(context.Background(), strings.NewReader(input))
+	r.RenderStream(ch)
 
 	got := buf.String()
 	if !strings.Contains(got, "thinking...") {
@@ -203,27 +256,42 @@ func TestRenderStreamIntegration(t *testing.T) {
 	}
 }
 
-func TestRenderStreamStopsOnPipeClose(t *testing.T) {
-	pr, pw := io.Pipe()
+func TestRenderStreamClosedChannel(t *testing.T) {
+	ch := make(chan CommonEvent)
+	close(ch)
 
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
+	r.RenderStream(ch)
 
-	done := make(chan struct{})
-	go func() {
-		r.RenderStream(context.Background(), pr)
-		close(done)
-	}()
+	if buf.String() != "" {
+		t.Fatalf("expected empty output for closed channel, got %q", buf.String())
+	}
+}
 
-	// Write one event then close pipe (simulates subprocess exit)
-	line := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}` + "\n"
-	pw.Write([]byte(line))
-	pw.Close()
+func TestRenderClaudeStreamIntegration(t *testing.T) {
+	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking..."}]}}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Bash","input":{"command":"ls"}}]}}` + "\n" +
+		`{"type":"tool_result","tool_result":{"tool_use_id":"tu_1","content":"file1.go"}}` + "\n" +
+		`{"type":"result","cost_usd":0.01,"duration_ms":5000,"result":"Done","is_error":false}` + "\n"
 
-	<-done
+	ch := ParseStream(context.Background(), strings.NewReader(input))
+
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+	r.RenderStream(ch)
 
 	got := buf.String()
-	if !strings.Contains(got, "hello") {
-		t.Fatalf("expected rendered event, got %q", got)
+	if !strings.Contains(got, "thinking...") {
+		t.Fatalf("expected agent text, got %q", got)
+	}
+	if !strings.Contains(got, "[tool] Bash") {
+		t.Fatalf("expected tool use, got %q", got)
+	}
+	if !strings.Contains(got, "[result]") {
+		t.Fatalf("expected tool result, got %q", got)
+	}
+	if !strings.Contains(got, "[done]") {
+		t.Fatalf("expected done summary, got %q", got)
 	}
 }
