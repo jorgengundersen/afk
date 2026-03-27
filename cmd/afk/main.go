@@ -13,10 +13,16 @@ import (
 	"github.com/jorgengundersen/afk/internal/logger"
 	"github.com/jorgengundersen/afk/internal/loop"
 	"github.com/jorgengundersen/afk/internal/prompt"
+	"github.com/jorgengundersen/afk/internal/quickstart"
 	"github.com/jorgengundersen/afk/internal/signal"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "quickstart" {
+		fmt.Print(quickstart.Text())
+		os.Exit(0)
+	}
+
 	cfg, err := config.ParseFlags(os.Args[1:], os.Stdout)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {

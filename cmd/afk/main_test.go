@@ -202,6 +202,24 @@ func TestRunBeadsNoWork(t *testing.T) {
 	}
 }
 
+func TestQuickstartSubcommand(t *testing.T) {
+	bin := build(t)
+
+	cmd := exec.Command(bin, "quickstart")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected exit 0, got error: %v\n%s", err, out)
+	}
+
+	got := string(out)
+	if !strings.Contains(got, "afk") {
+		t.Errorf("quickstart output should mention afk, got %q", got)
+	}
+	if !strings.Contains(got, "USAGE") {
+		t.Errorf("quickstart output should contain USAGE section, got %q", got)
+	}
+}
+
 func TestHarnessBinaryNotFound(t *testing.T) {
 	bin := build(t)
 

@@ -1,0 +1,35 @@
+afk — run AI coding agents unattended
+
+USAGE
+  afk -p "your prompt"              # single run (default 20 iterations)
+  afk -p "fix lint" -n 5            # cap at 5 iterations
+  afk -d -p "triage bugs"           # daemon: loop until stopped
+  afk -d --beads                    # daemon: pull work from beads
+  afk --harness opencode -p "..."   # use a different harness
+  afk --raw "cmd {prompt}" -p "..." # raw command template
+  afk quickstart                    # show this cheatsheet
+
+FLAGS
+  -p          prompt text (required unless --beads)
+  -n          max iterations        (default 20)
+  -d          daemon mode           (loop until signal)
+  --sleep     pause between loops   (default 60s, requires -d)
+  --harness   harness binary        (default claude)
+  --model     model override
+  --raw       raw command template  (replaces harness)
+  --beads     pull work from beads issue tracker
+  --label     label filter AND      (repeatable)
+  --label-any label filter OR       (repeatable)
+
+EXAMPLES
+  # Fix a bug, let the agent self-verify
+  afk -p "fix the nil pointer in handler.go, run tests"
+
+  # Continuous triage with beads
+  afk -d --beads --label team:backend
+
+  # Use a custom model
+  afk -p "refactor auth" --model claude-sonnet-4-6
+
+  # Pipe through a custom harness
+  afk --raw "my-agent --prompt {prompt}" -p "migrate db"
