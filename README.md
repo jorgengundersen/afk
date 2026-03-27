@@ -33,7 +33,13 @@ Run as a daemon, pulling work from beads and sleeping between cycles:
 afk -d --beads --sleep 5m
 ```
 
-Use a different agent:
+Use Codex with structured output:
+
+```sh
+afk -p "add input validation" --harness codex
+```
+
+Use OpenCode (stdout passthrough):
 
 ```sh
 afk -p "add input validation" --harness opencode
@@ -70,7 +76,7 @@ prompting required.
 |-------|------|--------|
 | Claude Code | `--harness claude` (default) | Implemented |
 | OpenCode | `--harness opencode` | Implemented |
-| OpenAI Codex | `--harness codex` | Planned |
+| OpenAI Codex | `--harness codex` | Implemented |
 | GitHub Copilot | `--harness copilot` | Planned |
 | Any CLI | `--raw "cmd {prompt}"` | Implemented |
 
