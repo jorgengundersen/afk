@@ -7,19 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-03-27
+
+Complete rewrite of the Go implementation with a common event model,
+Codex harness support, and user documentation.
+
 ### Added
 
-- **Skills**: agent skills for epic creation (`create-epic`), bug filing (`file-bug`), and human handoff (`needs-human`).
-- **Docs**: beads workflow documentation (`docs/beads-workflows.md`).
-- **Specs**: new project specs — `afk-overview.md`, `design-principles.md`, `skeleton.md`.
-
-### Removed
-
-- **Go implementation**: removed legacy Go codebase (`cmd/`, `internal/`, `e2e/`), old specs, and related docs pending rewrite.
+- **Common event model**: `CommonEvent` type with `EventKind` discriminator (Text, ToolCall, ToolOutput, Summary) and typed payloads, enabling multi-harness structured output.
+- **Codex harness**: first-class Codex support via `codex exec --json` with NDJSON parsing through the common event model.
+- **Codex adapter**: `ParseCodexStream` maps Codex events (agent_message, reasoning, command_execution, mcp_tool_call, file_change, web_search, turn.completed/failed) to common events.
+- **`afk quickstart`**: cheatsheet subcommand for quick reference.
+- **CLI**: `--harness-args` flag for passing additional flags to harness CLIs.
+- **Config**: `--label` and `--label-any` repeatable flags for beads label filtering.
+- **Beads integration**: `beads.Client` wrapping `bd` CLI, `WorkSource` interface for iteration gating, issue composition in prompt assembly.
+- **Harness rendering**: Claude terminal renderer with structured JSON stream parsing.
+- **Process groups**: subprocess runs in its own process group; cancellation kills the entire tree.
+- **Signal handling**: `NotifyContext` for signal-based context cancellation.
+- **Structured logging**: per-session log files with key=value format.
+- **User documentation**: CLI reference, user guide, harnesses guide, logging reference.
+- **End-to-end tests**: beads happy path and integration tests for process group cleanup.
+- **Race detector**: enabled in test suite.
+- **Skills**: agent skills for epic creation, bug filing, and human handoff.
 
 ### Changed
 
-- **gitignore**: added `tmp/` and beads credential key exclusions.
+- **Claude adapter**: refactored to emit `CommonEvent` instead of Claude-specific types. Old wire-format types are now unexported.
+- **Renderer**: `RenderStream` accepts `<-chan CommonEvent` instead of `io.Reader`, decoupling rendering from parsing. Summary rendering displays available fields (duration, cost, tokens) rather than assuming Claude's format.
+- **README**: updated to reflect Codex as implemented with quick start example.
+
+### Fixed
+
+- **Stream parser**: warns on skipped malformed JSON and unknown events instead of silently dropping them.
+- **Loop**: WorkSource errors treated as failed iterations in max-iter mode; daemon mode returns exit code 1 when all iterations fail; iteration counter incremented in daemon mode.
+- **Logger**: `Log` returns error; exit immediately on log failure; nil file pointer and closed flag handled in `Close`.
+- **Config**: usage written to stdout on `-h` with exit code 0; whitespace-only `--raw` no longer panics.
+- **Harness**: fresh pipe created per `Claude.Run()` call; non-zero exit codes included in allFailed check.
+- **Loop**: `sync.Mutex` added to test helpers to fix race conditions.
+
+### Removed
+
+- **Legacy Go implementation**: removed old codebase pending rewrite (replaced by current implementation).
 
 ## [1.2.0] - 2026-03-20
 
@@ -65,7 +93,8 @@ Initial release of afk — an autonomous loop runner for AI coding agents.
 - **Documentation**: user guide, CLI reference, harness documentation, logging reference, and README.
 - **End-to-end and unit test suites** covering all packages.
 
-[Unreleased]: https://github.com/jorgengundersen/afk/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/jorgengundersen/afk/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/jorgengundersen/afk/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jorgengundersen/afk/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jorgengundersen/afk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jorgengundersen/afk/releases/tag/v1.0.0
