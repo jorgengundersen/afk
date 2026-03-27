@@ -63,6 +63,57 @@ func (c *Claude) Run(ctx context.Context, prompt string) (int, error) {
 	return exitCode, err
 }
 
+// Codex invokes the codex CLI in exec mode with structured JSON streaming.
+type Codex struct {
+	model       string
+	harnessArgs string
+	pr          *io.PipeReader
+	pw          *io.PipeWriter
+	output      io.Writer // where rendered events are written; defaults to os.Stdout
+}
+
+func (c *Codex) buildCmd(ctx context.Context, prompt string) *exec.Cmd {
+	args := []string{"exec", prompt, "--json"}
+	if c.model != "" {
+		args = append(args, "--model", c.model)
+	}
+	if c.harnessArgs != "" {
+		args = append(args, strings.Fields(c.harnessArgs)...)
+	}
+	cmd := exec.CommandContext(ctx, "codex", args...)
+	cmd.Stdin = nil
+	cmd.Stdout = c.pw
+	cmd.Stderr = os.Stderr
+	return cmd
+}
+
+func (c *Codex) renderOutput(ctx context.Context) {
+	w := c.output
+	if w == nil {
+		w = os.Stdout
+	}
+	ch := ParseCodexStream(ctx, c.pr, os.Stderr)
+	r := NewRenderer(w)
+	r.RenderStream(ch)
+}
+
+func (c *Codex) Run(ctx context.Context, prompt string) (int, error) {
+	c.pr, c.pw = io.Pipe()
+
+	cmd := c.buildCmd(ctx, prompt)
+
+	done := make(chan struct{})
+	go func() {
+		c.renderOutput(ctx)
+		close(done)
+	}()
+
+	exitCode, err := runCmd(ctx, cmd)
+	c.pw.Close()
+	<-done
+	return exitCode, err
+}
+
 // OpenCode invokes the opencode CLI in headless mode.
 type OpenCode struct {
 	model       string
@@ -130,6 +181,8 @@ func CheckBinary(harness, raw string) error {
 	switch harness {
 	case "claude":
 		bin = "claude"
+	case "codex":
+		bin = "codex"
 	case "opencode":
 		bin = "opencode"
 	default:
@@ -149,6 +202,8 @@ func New(harness, model, raw, harnessArgs string) (Runner, error) {
 	switch harness {
 	case "claude":
 		return &Claude{model: model, harnessArgs: harnessArgs}, nil
+	case "codex":
+		return &Codex{model: model, harnessArgs: harnessArgs}, nil
 	case "opencode":
 		return &OpenCode{model: model, harnessArgs: harnessArgs}, nil
 	default:

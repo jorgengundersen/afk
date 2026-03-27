@@ -311,6 +311,90 @@ echo '{"type":"result","cost_usd":0.005,"duration_ms":2000,"result":"done","is_e
 	}
 }
 
+// --- Codex factory and command tests ---
+
+func TestNewCodexRunner(t *testing.T) {
+	r, err := New("codex", "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := r.(*Codex); !ok {
+		t.Fatalf("expected *Codex, got %T", r)
+	}
+}
+
+func TestNewCodexWithModel(t *testing.T) {
+	r, err := New("codex", "o3", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	c, ok := r.(*Codex)
+	if !ok {
+		t.Fatalf("expected *Codex, got %T", r)
+	}
+	if c.model != "o3" {
+		t.Fatalf("expected model %q, got %q", "o3", c.model)
+	}
+}
+
+func TestCodexBuildCmdPromptOnly(t *testing.T) {
+	c := &Codex{}
+	cmd := c.buildCmd(context.Background(), "do the thing")
+	args := cmd.Args[1:] // skip binary name
+	want := []string{"exec", "do the thing", "--json"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("expected args %v, got %v", want, args)
+	}
+}
+
+func TestCodexBuildCmdWithModelAndArgs(t *testing.T) {
+	c := &Codex{model: "o3", harnessArgs: "--full-auto"}
+	cmd := c.buildCmd(context.Background(), "hello")
+	args := cmd.Args[1:]
+	want := []string{"exec", "hello", "--json", "--model", "o3", "--full-auto"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("expected args %v, got %v", want, args)
+	}
+}
+
+func TestCodexStderrInheritedStdoutPiped(t *testing.T) {
+	r, _ := New("codex", "", "", "")
+	c := r.(*Codex)
+	cmd := c.buildCmd(context.Background(), "hello")
+	if cmd.Stdout == nil || cmd.Stdout == os.Stdout {
+		t.Fatal("expected Codex cmd.Stdout to be a pipe (not nil or os.Stdout)")
+	}
+	if cmd.Stderr != os.Stderr {
+		t.Fatal("expected Codex cmd.Stderr to be os.Stderr")
+	}
+}
+
+func TestCodexRunRendersStreamEvents(t *testing.T) {
+	pr, pw := io.Pipe()
+	var buf bytes.Buffer
+	c := &Codex{
+		pr:     pr,
+		pw:     pw,
+		output: &buf,
+	}
+
+	go func() {
+		pw.Write([]byte(`{"type":"item.completed","item":{"type":"agent_message","content":"hello from codex"}}` + "\n"))
+		pw.Write([]byte(`{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}` + "\n"))
+		pw.Close()
+	}()
+
+	c.renderOutput(context.Background())
+
+	got := buf.String()
+	if !strings.Contains(got, "hello from codex") {
+		t.Fatalf("expected rendered text, got %q", got)
+	}
+	if !strings.Contains(got, "[done]") {
+		t.Fatalf("expected done summary, got %q", got)
+	}
+}
+
 // --- CheckBinary tests ---
 
 func TestCheckBinaryNamedHarnessFound(t *testing.T) {
