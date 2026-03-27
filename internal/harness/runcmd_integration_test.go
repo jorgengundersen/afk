@@ -129,6 +129,49 @@ sleep 300
 	}
 }
 
+// TestIntegrationCommandContextSIGTERM verifies that when a cmd created with
+// exec.CommandContext is passed to runCmd, the process receives SIGTERM (not
+// SIGKILL) on context cancellation. This exercises the race between Go's
+// default cmd.Cancel (which sends SIGKILL) and runCmd's own cancellation handler.
+func TestIntegrationCommandContextSIGTERM(t *testing.T) {
+	dir := t.TempDir()
+	markerFile := filepath.Join(dir, "got-sigterm")
+	pidFile := filepath.Join(dir, "pid")
+
+	script := helperScript(t, dir, "trap-term-ctx.sh", fmt.Sprintf(`#!/bin/sh
+trap 'echo yes > %s; exit 0' TERM
+echo $$ > %s
+sleep 300
+`, markerFile, pidFile))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Use exec.CommandContext — this sets cmd.Cancel to kill the process,
+	// which races with runCmd's own SIGTERM handler.
+	cmd := exec.CommandContext(ctx, script)
+
+	done := make(chan struct{})
+	go func() {
+		runCmd(ctx, cmd)
+		close(done)
+	}()
+
+	readPID(t, pidFile, 5*time.Second)
+	time.Sleep(50 * time.Millisecond) // allow trap to register
+
+	cancel()
+	<-done
+
+	data, err := os.ReadFile(markerFile)
+	if err != nil {
+		t.Fatalf("SIGTERM marker file not created — process was likely killed with SIGKILL, not SIGTERM: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "yes" {
+		t.Fatalf("unexpected marker content: %q", string(data))
+	}
+}
+
 // TestIntegrationNormalExitNoSignals verifies that a process tree that exits
 // on its own returns the correct exit code and no error, without any signal
 // being sent. The helper script spawns a grandchild that also exits quickly.

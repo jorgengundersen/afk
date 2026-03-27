@@ -17,6 +17,7 @@ const killGracePeriod = 5 * time.Second
 // to SIGKILL. This ensures grandchild processes are cleaned up.
 func runCmd(ctx context.Context, cmd *exec.Cmd) (int, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = nil // disable Go's default SIGKILL; we handle cancellation via process group SIGTERM
 
 	if err := cmd.Start(); err != nil {
 		return 0, err
