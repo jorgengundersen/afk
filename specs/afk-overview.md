@@ -57,6 +57,15 @@ passed through to the harness CLI via `--harness-args` (ignored for `--raw`).
 
 `--raw` is mutually exclusive with `--harness` and `--model`.
 
+## Subcommands
+
+| Subcommand   | Description                                      |
+|--------------|--------------------------------------------------|
+| `quickstart` | Print an examples-only cheatsheet to stdout and exit |
+
+Subcommands are intercepted before flag parsing. If the first argument matches
+a subcommand, it runs and exits — no flags are processed.
+
 ## CLI Flags
 
 | Flag        | Type     | Default | Description                             |
