@@ -10,6 +10,9 @@ loop, harnesses, and future config-file loading all build on.
 $ afk -p "do the thing" -n 5 --harness claude
 # Config struct populated, validated, passed to Run()
 
+$ afk -p "do the thing" --harness codex
+# Config struct populated, validated, passed to Run()
+
 $ afk --raw "my-agent {prompt}" --harness claude
 error: --raw cannot be combined with --harness or --model
 

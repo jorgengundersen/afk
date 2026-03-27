@@ -5,8 +5,8 @@
 `afk` is a CLI that runs agentic coding loops unattended. You start it, walk
 away, and come back to completed work.
 
-It wraps agent CLIs (Claude Code, OpenCode, etc.) in a retry loop, optionally
-pulling work from `bd` (beads) for self-directing operation.
+It wraps agent CLIs (Claude Code, Codex, OpenCode, etc.) in a retry loop,
+optionally pulling work from `bd` (beads) for self-directing operation.
 
 ## Modes
 
@@ -48,12 +48,22 @@ contract: given a prompt string, run the agent and return an exit code.
 
 | Harness     | Binary     | Notes                                                        |
 |-------------|------------|--------------------------------------------------------------|
-| Claude Code | `claude`   | Default. Runs with the agent's own applied configuration     |
-| OpenCode    | `opencode` | Headless mode                                                |
+| Claude Code | `claude`   | Default. Structured output via `--output-format stream-json` |
+| Codex       | `codex`    | `codex exec` with `--json` for structured NDJSON output      |
+| OpenCode    | `opencode` | Headless mode, stdout/stderr passthrough                     |
 | Raw         | any        | Escape hatch: `--raw "cmd {prompt}"` — `{prompt}` is substituted |
 
-afk does not inject flags into the harness by default. Additional flags can be
-passed through to the harness CLI via `--harness-args` (ignored for `--raw`).
+**afk's responsibility per harness is exactly two things:** invoke the agent in
+non-interactive mode, and enable structured output (when supported). All other
+harness behaviour (sandbox, approvals, permissions) is the user's
+responsibility via `--harness-args` or the agent's own config files.
+
+**Working directory:** afk should be run in the directory it should operate on,
+typically the project root. Harnesses inherit the current working directory.
+afk does not support changing directories for harnesses.
+
+Additional flags can be passed through to the harness CLI via `--harness-args`
+(ignored for `--raw`).
 
 `--raw` is mutually exclusive with `--harness` and `--model`.
 
@@ -74,8 +84,8 @@ a subcommand, it runs and exits — no flags are processed.
 | `-n`        | int      | 20      | Max iterations                          |
 | `-d`        | bool     | false   | Daemon mode                             |
 | `--sleep`   | duration | 60s     | Sleep between cycles (daemon only)      |
-| `--harness` | string   | claude  | Which agent to use                      |
-| `--model`   | string   | —       | Model override passed to harness        |
+| `--harness` | string   | claude  | Which agent to use (claude, codex, opencode) |
+| `--model`   | string   | —       | Model override mapped to harness's model flag |
 | `--raw`     | string   | —       | Raw command with `{prompt}` placeholder |
 | `--harness-args` | string | —  | Additional flags passed through to harness CLI |
 | `--beads`   | bool     | false   | Pull work from bd                       |

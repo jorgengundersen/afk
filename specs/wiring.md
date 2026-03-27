@@ -17,6 +17,9 @@ $ afk -p "do work" -d
 # runs claude in daemon mode until Ctrl+C
 # exits 0
 
+$ afk -p "do work" --harness codex
+# runs codex exec with structured NDJSON output
+
 $ afk -p "do work" --harness opencode
 # runs opencode instead of claude
 
