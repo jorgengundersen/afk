@@ -18,20 +18,14 @@ func TestParseStreamAssistantText(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	ev := events[0]
-	if ev.Type != EventAssistant {
-		t.Fatalf("expected type %q, got %q", EventAssistant, ev.Type)
+	if ev.Kind != KindText {
+		t.Fatalf("expected kind %q, got %q", KindText, ev.Kind)
 	}
-	if ev.Message == nil {
-		t.Fatal("expected non-nil Message")
+	if ev.Text == nil {
+		t.Fatal("expected non-nil Text payload")
 	}
-	if len(ev.Message.Content) != 1 {
-		t.Fatalf("expected 1 content block, got %d", len(ev.Message.Content))
-	}
-	if ev.Message.Content[0].Type != "text" {
-		t.Fatalf("expected content type %q, got %q", "text", ev.Message.Content[0].Type)
-	}
-	if ev.Message.Content[0].Text != "Hello!" {
-		t.Fatalf("expected text %q, got %q", "Hello!", ev.Message.Content[0].Text)
+	if ev.Text.Content != "Hello!" {
+		t.Fatalf("expected text %q, got %q", "Hello!", ev.Text.Content)
 	}
 }
 
@@ -44,18 +38,18 @@ func TestParseStreamAssistantToolUse(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	cb := events[0].Message.Content[0]
-	if cb.Type != "tool_use" {
-		t.Fatalf("expected content type %q, got %q", "tool_use", cb.Type)
+	ev := events[0]
+	if ev.Kind != KindToolCall {
+		t.Fatalf("expected kind %q, got %q", KindToolCall, ev.Kind)
 	}
-	if cb.ID != "tu_1" {
-		t.Fatalf("expected ID %q, got %q", "tu_1", cb.ID)
+	if ev.ToolCall == nil {
+		t.Fatal("expected non-nil ToolCall payload")
 	}
-	if cb.Name != "Read" {
-		t.Fatalf("expected Name %q, got %q", "Read", cb.Name)
+	if ev.ToolCall.Name != "Read" {
+		t.Fatalf("expected Name %q, got %q", "Read", ev.ToolCall.Name)
 	}
-	if string(cb.Input) != `{"path":"/tmp/x"}` {
-		t.Fatalf("expected Input %q, got %q", `{"path":"/tmp/x"}`, string(cb.Input))
+	if ev.ToolCall.Input != `{"path":"/tmp/x"}` {
+		t.Fatalf("expected Input %q, got %q", `{"path":"/tmp/x"}`, ev.ToolCall.Input)
 	}
 }
 
@@ -69,14 +63,14 @@ func TestParseStreamToolResult(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	ev := events[0]
-	if ev.Type != EventToolResult {
-		t.Fatalf("expected type %q, got %q", EventToolResult, ev.Type)
+	if ev.Kind != KindToolOutput {
+		t.Fatalf("expected kind %q, got %q", KindToolOutput, ev.Kind)
 	}
-	if ev.ToolResult.ToolUseID != "tu_1" {
-		t.Fatalf("expected ToolUseID %q, got %q", "tu_1", ev.ToolResult.ToolUseID)
+	if ev.ToolOutput == nil {
+		t.Fatal("expected non-nil ToolOutput payload")
 	}
-	if ev.ToolResult.Content != "file contents here" {
-		t.Fatalf("expected Content %q, got %q", "file contents here", ev.ToolResult.Content)
+	if ev.ToolOutput.Content != "file contents here" {
+		t.Fatalf("expected Content %q, got %q", "file contents here", ev.ToolOutput.Content)
 	}
 }
 
@@ -90,19 +84,22 @@ func TestParseStreamResult(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	ev := events[0]
-	if ev.Type != EventResult {
-		t.Fatalf("expected type %q, got %q", EventResult, ev.Type)
+	if ev.Kind != KindSummary {
+		t.Fatalf("expected kind %q, got %q", KindSummary, ev.Kind)
 	}
-	if ev.Result.CostUSD != 0.003 {
-		t.Fatalf("expected CostUSD %f, got %f", 0.003, ev.Result.CostUSD)
+	if ev.Summary == nil {
+		t.Fatal("expected non-nil Summary payload")
 	}
-	if ev.Result.DurationMS != 1234 {
-		t.Fatalf("expected DurationMS %d, got %d", 1234, ev.Result.DurationMS)
+	if ev.Summary.CostUSD != 0.003 {
+		t.Fatalf("expected CostUSD %f, got %f", 0.003, ev.Summary.CostUSD)
 	}
-	if ev.Result.Result != "Done!" {
-		t.Fatalf("expected Result %q, got %q", "Done!", ev.Result.Result)
+	if ev.Summary.DurationMS != 1234 {
+		t.Fatalf("expected DurationMS %d, got %d", 1234, ev.Summary.DurationMS)
 	}
-	if ev.Result.IsError {
+	if ev.Summary.Result != "Done!" {
+		t.Fatalf("expected Result %q, got %q", "Done!", ev.Summary.Result)
+	}
+	if ev.Summary.IsError {
 		t.Fatal("expected IsError false")
 	}
 }
@@ -116,8 +113,8 @@ func TestParseStreamSkipsMalformedJSON(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event (malformed line skipped), got %d", len(events))
 	}
-	if events[0].Message.Content[0].Text != "ok" {
-		t.Fatalf("expected text %q, got %q", "ok", events[0].Message.Content[0].Text)
+	if events[0].Text.Content != "ok" {
+		t.Fatalf("expected text %q, got %q", "ok", events[0].Text.Content)
 	}
 }
 
@@ -146,8 +143,8 @@ func TestParseStreamSkipsUnknownEventType(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event (unknown type skipped), got %d", len(events))
 	}
-	if events[0].Type != EventAssistant {
-		t.Fatalf("expected type %q, got %q", EventAssistant, events[0].Type)
+	if events[0].Kind != KindText {
+		t.Fatalf("expected kind %q, got %q", KindText, events[0].Kind)
 	}
 }
 
@@ -194,10 +191,10 @@ func TestParseStreamMultipleEvents(t *testing.T) {
 	if len(events) != 5 {
 		t.Fatalf("expected 5 events, got %d", len(events))
 	}
-	wantTypes := []EventType{EventAssistant, EventAssistant, EventToolResult, EventAssistant, EventResult}
-	for i, want := range wantTypes {
-		if events[i].Type != want {
-			t.Fatalf("event[%d]: expected type %q, got %q", i, want, events[i].Type)
+	wantKinds := []EventKind{KindText, KindToolCall, KindToolOutput, KindText, KindSummary}
+	for i, want := range wantKinds {
+		if events[i].Kind != want {
+			t.Fatalf("event[%d]: expected kind %q, got %q", i, want, events[i].Kind)
 		}
 	}
 }
@@ -205,8 +202,6 @@ func TestParseStreamMultipleEvents(t *testing.T) {
 func TestParseStreamContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Simulate: writer sends one event, then context is cancelled, then pipe closes
-	// (mirrors real flow: subprocess killed → pw.Close())
 	pr, pw := io.Pipe()
 	ch := ParseStream(ctx, pr)
 
@@ -221,20 +216,17 @@ func TestParseStreamContextCancellation(t *testing.T) {
 	if !ok {
 		t.Fatal("expected event before cancel")
 	}
-	if ev.Message.Content[0].Text != "before cancel" {
-		t.Fatalf("expected %q, got %q", "before cancel", ev.Message.Content[0].Text)
+	if ev.Text.Content != "before cancel" {
+		t.Fatalf("expected %q, got %q", "before cancel", ev.Text.Content)
 	}
 
-	// Cancel context then close writer (simulates subprocess termination)
+	// Cancel context then close writer
 	cancel()
 	pw.Close()
 
 	// Channel should drain and close
-	var extra []Event
-	for ev := range ch {
-		extra = append(extra, ev)
+	for range ch {
 	}
-	// No strict assertion on extra count — cancellation is prompt but not instant
 }
 
 func TestParseStreamResultWithError(t *testing.T) {
@@ -246,11 +238,11 @@ func TestParseStreamResultWithError(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if !events[0].Result.IsError {
+	if !events[0].Summary.IsError {
 		t.Fatal("expected IsError true")
 	}
-	if events[0].Result.Result != "Something went wrong" {
-		t.Fatalf("expected Result %q, got %q", "Something went wrong", events[0].Result.Result)
+	if events[0].Summary.Result != "Something went wrong" {
+		t.Fatalf("expected Result %q, got %q", "Something went wrong", events[0].Summary.Result)
 	}
 }
 
@@ -260,25 +252,29 @@ func TestParseStreamMixedContentBlocks(t *testing.T) {
 
 	events := collectEvents(t, context.Background(), r)
 
-	if len(events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(events))
+	// Mixed content blocks should emit separate events
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (one Text, one ToolCall), got %d", len(events))
 	}
-	if len(events[0].Message.Content) != 2 {
-		t.Fatalf("expected 2 content blocks, got %d", len(events[0].Message.Content))
+	if events[0].Kind != KindText {
+		t.Fatalf("expected first event kind %q, got %q", KindText, events[0].Kind)
 	}
-	if events[0].Message.Content[0].Type != "text" {
-		t.Fatalf("expected first block type %q, got %q", "text", events[0].Message.Content[0].Type)
+	if events[0].Text.Content != "Let me check." {
+		t.Fatalf("expected text %q, got %q", "Let me check.", events[0].Text.Content)
 	}
-	if events[0].Message.Content[1].Type != "tool_use" {
-		t.Fatalf("expected second block type %q, got %q", "tool_use", events[0].Message.Content[1].Type)
+	if events[1].Kind != KindToolCall {
+		t.Fatalf("expected second event kind %q, got %q", KindToolCall, events[1].Kind)
+	}
+	if events[1].ToolCall.Name != "Bash" {
+		t.Fatalf("expected tool name %q, got %q", "Bash", events[1].ToolCall.Name)
 	}
 }
 
 // collectEvents drains ParseStream into a slice.
-func collectEvents(t *testing.T, ctx context.Context, r *strings.Reader) []Event {
+func collectEvents(t *testing.T, ctx context.Context, r *strings.Reader) []CommonEvent {
 	t.Helper()
 	ch := ParseStream(ctx, r)
-	var events []Event
+	var events []CommonEvent
 	for ev := range ch {
 		events = append(events, ev)
 	}

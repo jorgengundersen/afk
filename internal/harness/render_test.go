@@ -3,7 +3,6 @@ package harness
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -13,13 +12,9 @@ func TestRenderTextEvent(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventAssistant,
-		Message: &AssistantMessage{
-			Content: []ContentBlock{
-				{Type: "text", Text: "Hello, world!"},
-			},
-		},
+	ev := CommonEvent{
+		Kind: KindText,
+		Text: &TextPayload{Content: "Hello, world!"},
 	}
 	r.Render(ev)
 
@@ -34,13 +29,9 @@ func TestRenderToolUseEvent(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventAssistant,
-		Message: &AssistantMessage{
-			Content: []ContentBlock{
-				{Type: "tool_use", Name: "Bash", Input: json.RawMessage(`{"command":"ls -la"}`)},
-			},
-		},
+	ev := CommonEvent{
+		Kind:     KindToolCall,
+		ToolCall: &ToolCallPayload{Name: "Bash", Input: `{"command":"ls -la"}`},
 	}
 	r.Render(ev)
 
@@ -57,12 +48,9 @@ func TestRenderToolResultEvent(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventToolResult,
-		ToolResult: &ToolResult{
-			ToolUseID: "tu_1",
-			Content:   "file1.go\nfile2.go",
-		},
+	ev := CommonEvent{
+		Kind:       KindToolOutput,
+		ToolOutput: &ToolOutputPayload{Content: "file1.go\nfile2.go"},
 	}
 	r.Render(ev)
 
@@ -77,12 +65,9 @@ func TestRenderToolResultTruncated(t *testing.T) {
 	r := NewRenderer(&buf)
 
 	long := strings.Repeat("x", 500)
-	ev := Event{
-		Type: EventToolResult,
-		ToolResult: &ToolResult{
-			ToolUseID: "tu_1",
-			Content:   long,
-		},
+	ev := CommonEvent{
+		Kind:       KindToolOutput,
+		ToolOutput: &ToolOutputPayload{Content: long},
 	}
 	r.Render(ev)
 
@@ -99,9 +84,9 @@ func TestRenderResultSummary(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventResult,
-		Result: &ResultSummary{
+	ev := CommonEvent{
+		Kind: KindSummary,
+		Summary: &SummaryPayload{
 			CostUSD:    0.003,
 			DurationMS: 1234,
 			Result:     "Done!",
@@ -123,9 +108,9 @@ func TestRenderResultSummaryError(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventResult,
-		Result: &ResultSummary{
+	ev := CommonEvent{
+		Kind: KindSummary,
+		Summary: &SummaryPayload{
 			CostUSD:    0.001,
 			DurationMS: 500,
 			Result:     "Something went wrong",
@@ -147,13 +132,9 @@ func TestRenderTextWithNewlines(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventAssistant,
-		Message: &AssistantMessage{
-			Content: []ContentBlock{
-				{Type: "text", Text: "Line 1\nLine 2\nLine 3"},
-			},
-		},
+	ev := CommonEvent{
+		Kind: KindText,
+		Text: &TextPayload{Content: "Line 1\nLine 2\nLine 3"},
 	}
 	r.Render(ev)
 
@@ -167,16 +148,9 @@ func TestRenderMixedContentBlocks(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRenderer(&buf)
 
-	ev := Event{
-		Type: EventAssistant,
-		Message: &AssistantMessage{
-			Content: []ContentBlock{
-				{Type: "text", Text: "Let me check."},
-				{Type: "tool_use", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)},
-			},
-		},
-	}
-	r.Render(ev)
+	// Mixed content blocks are now separate events
+	r.Render(CommonEvent{Kind: KindText, Text: &TextPayload{Content: "Let me check."}})
+	r.Render(CommonEvent{Kind: KindToolCall, ToolCall: &ToolCallPayload{Name: "Bash", Input: `{"command":"ls"}`}})
 
 	got := buf.String()
 	if !strings.Contains(got, "Let me check.") {
@@ -192,13 +166,9 @@ func TestRenderToolUseInputTruncated(t *testing.T) {
 	r := NewRenderer(&buf)
 
 	longInput := `{"command":"` + strings.Repeat("a", 300) + `"}`
-	ev := Event{
-		Type: EventAssistant,
-		Message: &AssistantMessage{
-			Content: []ContentBlock{
-				{Type: "tool_use", Name: "Bash", Input: json.RawMessage(longInput)},
-			},
-		},
+	ev := CommonEvent{
+		Kind:     KindToolCall,
+		ToolCall: &ToolCallPayload{Name: "Bash", Input: longInput},
 	}
 	r.Render(ev)
 

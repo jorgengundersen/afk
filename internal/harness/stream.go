@@ -8,30 +8,22 @@ import (
 	"io"
 )
 
-// EventType represents the type of a Claude stream event.
-type EventType string
+// claudeEventType represents the type of a Claude stream event (wire format).
+type claudeEventType string
 
 const (
-	EventAssistant  EventType = "assistant"
-	EventToolResult EventType = "tool_result"
-	EventResult     EventType = "result"
+	claudeAssistant  claudeEventType = "assistant"
+	claudeToolResult claudeEventType = "tool_result"
+	claudeResult     claudeEventType = "result"
 )
 
-// Event represents a parsed Claude stream event.
-type Event struct {
-	Type       EventType
-	Message    *AssistantMessage // non-nil for EventAssistant
-	ToolResult *ToolResult       // non-nil for EventToolResult
-	Result     *ResultSummary    // non-nil for EventResult
+// claudeMessage contains the content of an assistant turn (wire format).
+type claudeMessage struct {
+	Content []claudeContentBlock `json:"content"`
 }
 
-// AssistantMessage contains the content of an assistant turn.
-type AssistantMessage struct {
-	Content []ContentBlock `json:"content"`
-}
-
-// ContentBlock is a piece of assistant content.
-type ContentBlock struct {
+// claudeContentBlock is a piece of assistant content (wire format).
+type claudeContentBlock struct {
 	Type  string          `json:"type"`
 	Text  string          `json:"text,omitempty"`
 	ID    string          `json:"id,omitempty"`
@@ -39,23 +31,15 @@ type ContentBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 }
 
-// ToolResult contains the result of a tool invocation.
-type ToolResult struct {
+// claudeToolResultPayload contains the result of a tool invocation (wire format).
+type claudeToolResultPayload struct {
 	ToolUseID string `json:"tool_use_id"`
 	Content   string `json:"content"`
 }
 
-// ResultSummary contains the final summary of a Claude session.
-type ResultSummary struct {
-	CostUSD    float64 `json:"cost_usd"`
-	DurationMS int     `json:"duration_ms"`
-	Result     string  `json:"result"`
-	IsError    bool    `json:"is_error"`
-}
-
 // rawEvent is the top-level JSON envelope from Claude's stream.
 type rawEvent struct {
-	Type       EventType       `json:"type"`
+	Type       claudeEventType `json:"type"`
 	Message    json.RawMessage `json:"message,omitempty"`
 	ToolResult json.RawMessage `json:"tool_result,omitempty"`
 	// Result-level fields are inlined at the top level.
@@ -65,17 +49,17 @@ type rawEvent struct {
 	IsError    bool    `json:"is_error,omitempty"`
 }
 
-// ParseStream reads newline-delimited JSON from r and sends parsed events
-// to the returned channel. The channel is closed when r is exhausted or
+// ParseStream reads newline-delimited JSON from r and sends parsed common
+// events to the returned channel. The channel is closed when r is exhausted or
 // ctx is cancelled. Malformed lines and unknown event types are skipped.
 // If warn is non-nil, a message is written for each skipped line.
-func ParseStream(ctx context.Context, r io.Reader, warn ...io.Writer) <-chan Event {
+func ParseStream(ctx context.Context, r io.Reader, warn ...io.Writer) <-chan CommonEvent {
 	var w io.Writer
 	if len(warn) > 0 {
 		w = warn[0]
 	}
 
-	ch := make(chan Event)
+	ch := make(chan CommonEvent)
 	go func() {
 		defer close(ch)
 		scanner := bufio.NewScanner(r)
@@ -99,7 +83,7 @@ func ParseStream(ctx context.Context, r io.Reader, warn ...io.Writer) <-chan Eve
 				continue
 			}
 
-			ev, ok := parseRawEvent(raw)
+			events, ok := parseRawEvent(raw)
 			if !ok {
 				if w != nil {
 					fmt.Fprintf(w, "skipping unknown event type: %s\n", raw.Type)
@@ -107,41 +91,67 @@ func ParseStream(ctx context.Context, r io.Reader, warn ...io.Writer) <-chan Eve
 				continue
 			}
 
-			select {
-			case ch <- ev:
-			case <-ctx.Done():
-				return
+			for _, ev := range events {
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
 	return ch
 }
 
-func parseRawEvent(raw rawEvent) (Event, bool) {
+func parseRawEvent(raw rawEvent) ([]CommonEvent, bool) {
 	switch raw.Type {
-	case EventAssistant:
-		var msg AssistantMessage
+	case claudeAssistant:
+		var msg claudeMessage
 		if err := json.Unmarshal(raw.Message, &msg); err != nil {
-			return Event{}, false
+			return nil, false
 		}
-		return Event{Type: EventAssistant, Message: &msg}, true
-	case EventToolResult:
-		var tr ToolResult
+		var events []CommonEvent
+		for _, block := range msg.Content {
+			switch block.Type {
+			case "text":
+				events = append(events, CommonEvent{
+					Kind: KindText,
+					Text: &TextPayload{Content: block.Text},
+				})
+			case "tool_use":
+				events = append(events, CommonEvent{
+					Kind: KindToolCall,
+					ToolCall: &ToolCallPayload{
+						Name:  block.Name,
+						Input: string(block.Input),
+					},
+				})
+			}
+		}
+		if len(events) == 0 {
+			return nil, false
+		}
+		return events, true
+	case claudeToolResult:
+		var tr claudeToolResultPayload
 		if err := json.Unmarshal(raw.ToolResult, &tr); err != nil {
-			return Event{}, false
+			return nil, false
 		}
-		return Event{Type: EventToolResult, ToolResult: &tr}, true
-	case EventResult:
-		return Event{
-			Type: EventResult,
-			Result: &ResultSummary{
+		return []CommonEvent{{
+			Kind:       KindToolOutput,
+			ToolOutput: &ToolOutputPayload{Content: tr.Content},
+		}}, true
+	case claudeResult:
+		return []CommonEvent{{
+			Kind: KindSummary,
+			Summary: &SummaryPayload{
 				CostUSD:    raw.CostUSD,
 				DurationMS: raw.DurationMS,
 				Result:     raw.Result,
 				IsError:    raw.IsError,
 			},
-		}, true
+		}}, true
 	default:
-		return Event{}, false
+		return nil, false
 	}
 }
