@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/jorgengundersen/afk/internal/signal"
 )
 
 // helperScript creates an executable shell script in dir and returns its path.
@@ -169,6 +171,69 @@ sleep 300
 	}
 	if strings.TrimSpace(string(data)) != "yes" {
 		t.Fatalf("unexpected marker content: %q", string(data))
+	}
+}
+
+// TestIntegrationForceKillOnSecondSignal verifies that when the context is
+// cancelled (first signal) and the process traps SIGTERM and stays alive,
+// a second signal triggers the force-kill hook registered by runCmd, sending
+// SIGKILL to the process group.
+func TestIntegrationForceKillOnSecondSignal(t *testing.T) {
+	// Override os.Exit so the test process survives the second signal.
+	restore := signal.SetExitFunc(func(int) {})
+	defer restore()
+
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+
+	// Script traps SIGTERM and stays alive — only SIGKILL can kill it.
+	script := helperScript(t, dir, "trap-stay-alive.sh", fmt.Sprintf(`#!/bin/sh
+trap '' TERM
+echo $$ > %s
+sleep 300
+`, pidFile))
+
+	ctx, cancel := signal.NotifyContext(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		runCmd(ctx, exec.Command(script))
+		close(done)
+	}()
+
+	pid := readPID(t, pidFile, 5*time.Second)
+	time.Sleep(50 * time.Millisecond) // allow trap to register
+
+	// First signal: cancels context → runCmd sends SIGTERM → process traps it.
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+
+	// Wait for context cancellation.
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("context was not cancelled after first SIGINT")
+	}
+
+	// Give runCmd time to send SIGTERM and enter grace period.
+	time.Sleep(100 * time.Millisecond)
+	if !processAlive(pid) {
+		t.Fatal("process should still be alive after SIGTERM (it traps SIGTERM)")
+	}
+
+	// Second signal: should trigger force-kill hook → SIGKILL to process group.
+	// The process must die well before the 5s grace period; 2s is generous.
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runCmd did not return quickly after force-kill — hook may not be registered")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	if processAlive(pid) {
+		t.Errorf("process %d still alive after force-kill", pid)
 	}
 }
 

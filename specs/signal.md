@@ -58,8 +58,6 @@ These are integration-style tests.
 
 ## Out of scope
 
-- Second signal forcing immediate exit (kill -9 is always available to the
-  user; no need to handle double-signal).
 - Timeout on graceful shutdown (if the harness hangs, the user sends another
   signal or kills the process).
 - Signal forwarding to child processes (the harness owns its subprocess

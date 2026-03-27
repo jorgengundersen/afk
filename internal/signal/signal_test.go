@@ -71,3 +71,73 @@ func TestContextCancelledOnSIGTERM(t *testing.T) {
 		t.Fatal("context was not cancelled after SIGTERM")
 	}
 }
+
+func TestSecondSignalCallsForceKill(t *testing.T) {
+	// Override os.Exit so the test process survives.
+	restore := signal.SetExitFunc(func(int) {})
+	defer restore()
+
+	ctx, cancel := signal.NotifyContext(context.Background())
+	defer cancel()
+
+	called := make(chan struct{}, 1)
+	deregister := signal.OnForceKill(func() {
+		called <- struct{}{}
+	})
+	defer deregister()
+
+	// First signal cancels context.
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("context was not cancelled after first SIGINT")
+	}
+
+	// Second signal should call the force-kill hook.
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+
+	select {
+	case <-called:
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("force-kill hook not called after second signal")
+	}
+}
+
+func TestForceKillDeregister(t *testing.T) {
+	restore := signal.SetExitFunc(func(int) {})
+	defer restore()
+
+	ctx, cancel := signal.NotifyContext(context.Background())
+	defer cancel()
+
+	called := false
+	deregister := signal.OnForceKill(func() {
+		called = true
+	})
+
+	// Deregister before second signal.
+	deregister()
+
+	// Catch signals so the test process doesn't die.
+	ch := make(chan os.Signal, 1)
+	ossignal.Notify(ch, syscall.SIGINT)
+	defer ossignal.Stop(ch)
+
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	<-ctx.Done()
+
+	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	// Drain signal.
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if called {
+		t.Fatal("deregistered hook was called")
+	}
+}

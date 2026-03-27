@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/jorgengundersen/afk/internal/signal"
 )
 
 const killGracePeriod = 5 * time.Second
@@ -22,6 +24,15 @@ func runCmd(ctx context.Context, cmd *exec.Cmd) (int, error) {
 	if err := cmd.Start(); err != nil {
 		return 0, err
 	}
+
+	pgid := cmd.Process.Pid
+
+	// Register a force-kill hook so that a second signal (double Ctrl+C)
+	// sends SIGKILL to the process group immediately.
+	deregister := signal.OnForceKill(func() {
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	})
+	defer deregister()
 
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
@@ -38,7 +49,6 @@ func runCmd(ctx context.Context, cmd *exec.Cmd) (int, error) {
 		return 0, err
 
 	case <-ctx.Done():
-		pgid := cmd.Process.Pid
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 
 		select {
