@@ -55,6 +55,7 @@ The logger is always closed before exit, regardless of how the process ends.
 | Harness factory returns error | Print error to stderr, exit 2 |
 | All setup succeeds | Run loop, exit with loop's exit code |
 | Signal received during loop | Context cancelled, loop exits cleanly |
+| Log fails during loop | Loop exits with code 1 — unobservable session is a failure |
 | Loop completes | Logger is closed before exit |
 | Logger close fails | Ignored (best effort) |
 
