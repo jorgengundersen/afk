@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-04-07
+
+### Fixed
+
+- **Harness**: disable Go's default `cmd.Cancel` so `runCmd` is the sole cancellation path; prevents a SIGKILL race that could skip graceful SIGTERM shutdown of the agent process group.
+- **Signal**: handle double Ctrl+C by running registered force-kill hooks on the second signal; `runCmd` registers a hook that SIGKILLs the agent process group, preventing orphaned agent processes.
+
+### Removed
+
+- **Harness**: non-unix platform support. `runcmd_other.go` (the fallback for non-unix GOOS values) lacked process group management and could not uphold the new signal contract. The harness is now unix-only.
+
 ## [2.0.0] - 2026-03-27
 
 Complete rewrite of the Go implementation with a common event model,
