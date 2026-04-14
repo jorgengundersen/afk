@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.1] - 2026-04-07
+## [2.0.1] - 2026-04-14
 
 ### Fixed
 
+- **Nix packaging**: pin flake package builds and dev shell to Go 1.26 (`go_1_26`) so sandboxed builds with `GOTOOLCHAIN=local` satisfy `go.mod` and don't fail on toolchain mismatch.
 - **Harness**: disable Go's default `cmd.Cancel` so `runCmd` is the sole cancellation path; prevents a SIGKILL race that could skip graceful SIGTERM shutdown of the agent process group.
 - **Signal**: handle double Ctrl+C by running registered force-kill hooks on the second signal; `runCmd` registers a hook that SIGKILLs the agent process group, preventing orphaned agent processes.
 
@@ -104,7 +105,8 @@ Initial release of afk — an autonomous loop runner for AI coding agents.
 - **Documentation**: user guide, CLI reference, harness documentation, logging reference, and README.
 - **End-to-end and unit test suites** covering all packages.
 
-[Unreleased]: https://github.com/jorgengundersen/afk/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/jorgengundersen/afk/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/jorgengundersen/afk/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/jorgengundersen/afk/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jorgengundersen/afk/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jorgengundersen/afk/compare/v1.0.0...v1.1.0
