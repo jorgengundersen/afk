@@ -17,11 +17,10 @@
           pkgs = nixpkgsFor.${system};
         in
         {
-          default = pkgs.buildGoModule {
+          default = pkgs.buildGo126Module {
             pname = "afk";
             version = "2.0.1";
             src = ./.;
-            go = pkgs.go_1_26;
             vendorHash = null;
             preCheck = ''
               export HOME="$TMPDIR/home"
