@@ -21,7 +21,12 @@
             pname = "afk";
             version = "1.1.0";
             src = ./.;
+            go = pkgs.go_1_26;
             vendorHash = null;
+            preCheck = ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+            '';
             meta = {
               description = "AFK automation tool";
               license = pkgs.lib.licenses.mit;
@@ -36,7 +41,7 @@
         in
         {
           default = pkgs.mkShell {
-            buildInputs = [ pkgs.go ];
+            buildInputs = [ pkgs.go_1_26 ];
           };
         });
     };
