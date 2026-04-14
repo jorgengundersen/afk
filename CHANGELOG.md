@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Nix packaging**: switch the flake package builder to `buildGo126Module` so downstream flake consumers reliably use Go 1.26 with `GOTOOLCHAIN=local`, even when their nixpkgs graph differs.
+
 ## [2.0.1] - 2026-04-14
 
 ### Fixed
