@@ -87,6 +87,7 @@ The `--raw` flag is an escape hatch: pass any command string with a
 
 | Document | Description |
 |----------|-------------|
+| [Specs](specs/index.html) | Current simplified `afk` PRD and design principles |
 | [CLI Reference](docs/cli-reference.md) | All flags, mutual-exclusion rules, exit codes |
 | [User Guide](docs/user-guide.md) | Concepts, workflows, tips |
 | [Harnesses](docs/harnesses.md) | Agent invocation details, AGENTS.md |
