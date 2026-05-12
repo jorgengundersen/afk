@@ -12,11 +12,3 @@ profile.cov
 
 # Scratch space
 tmp/
-
-# Local beads / Dolt files
-.dolt/
-*.db
-.beads-credential-key
-
-# Generated bead export
-.beads/issues.jsonl

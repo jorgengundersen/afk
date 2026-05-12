@@ -1,8 +1,5 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get
-started.
-
 ## Active Context
 
 The previous agent-specific implementation has been pruned. Treat the HTML
@@ -13,16 +10,7 @@ specs as the active source of product context:
 - `specs/design-principles.html`
 
 Do not infer requirements from deleted history, old releases, or obsolete
-agent/beads/prompt/harness workflows.
-
-## Quick Reference
-
-```bash
-bd ready --json                 # Find available work
-bd show <id> --json             # View issue details
-bd update <id> --claim --json   # Claim work atomically
-bd close <id> --reason "Done" --json
-```
+agent/prompt/harness workflows.
 
 ## Non-Interactive Shell Commands
 
@@ -43,17 +31,5 @@ Other commands that may prompt:
 - `ssh` - use `-o BatchMode=yes`
 - `apt-get` - use `-y`
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1`
-
-## Issue Tracking with bd
-
-Use **bd** for all task tracking. Do not create markdown TODO lists or use
-external issue trackers.
-
-Create linked follow-up work when needed:
-
-```bash
-bd create "Found bug" --description="Details" -t bug -p 1 \
-  --deps discovered-from:<parent-id> --json
-```
 
 Use conventional commits.
