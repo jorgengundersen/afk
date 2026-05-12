@@ -8,7 +8,9 @@
     :root { color-scheme: light dark; }
     body { max-width: 840px; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.55 system-ui, sans-serif; }
     h1, h2 { line-height: 1.2; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: color-mix(in srgb, CanvasText 10%, Canvas); padding: .1rem .25rem; border-radius: 4px; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: color-mix(in srgb, CanvasText 10%, Canvas); }
+    code { padding: .1rem .25rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -33,16 +35,96 @@
     <li>Delete stale code instead of adapting removed product scope.</li>
   </ul>
 
-  <h2>2. Forbidden Scope</h2>
+  <h2>2. Implementation Patterns</h2>
+  <p>
+    Keep orchestration thin and push decisions into small, named functions. These
+    examples show shape, not full implementations.
+  </p>
+
+  <h3>2.1 Entrypoint</h3>
+  <p><code>main</code> should wire process IO and exit. It should not contain loop logic.</p>
+  <pre><code>func main() {
+    os.Exit(afk.Main(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}</code></pre>
+
+  <h3>2.2 Config Is Data</h3>
+  <p>Prefer plain structs and validation functions over objects with hidden behavior.</p>
+  <pre><code>type Config struct {
+    Loops   int
+    Daemon  bool
+    Command []string
+}
+
+func ValidateConfig(cfg Config) error { /* small checks only */ }</code></pre>
+
+  <h3>2.3 Pure Functions First</h3>
+  <p>Parsing and policy should not touch processes, files, sleeps, or globals.</p>
+  <pre><code>func ParseItems(s string) ([]string, error)
+func EnvForIteration(index int, item *ItemContext) []string
+func ExitAfterFailure(policy FailurePolicy, code int) Decision</code></pre>
+
+  <h3>2.4 Narrow Boundaries</h3>
+  <p>Only boundary code imports process/signal packages. Domain logic receives simple values.</p>
+  <pre><code>// exec.go owns os/exec, syscall, process groups.
+func RunInvocation(ctx context.Context, inv Invocation) RunResult
+
+// loop.go decides what to run next. It does not build exec.Cmd.</code></pre>
+
+  <h3>2.5 Dependency Direction</h3>
+  <ul>
+    <li><code>config.go</code> parses and validates; it does not run loops.</li>
+    <li><code>items.go</code> parses item text; it does not execute child work.</li>
+    <li><code>policy.go</code> maps result codes to decisions; it does not sleep.</li>
+    <li><code>exec.go</code> runs one process; it does not know item semantics.</li>
+    <li><code>loop.go</code> orchestrates; it should stay readable and small.</li>
+  </ul>
+
+  <h3>2.6 Avoid God Objects</h3>
+  <p>Do not create one struct that owns config, parsing, policy, process state, logging, and tests.</p>
+  <pre><code>// Avoid:
+type App struct { /* config + parser + loop + exec + signals + output */ }
+func (a *App) RunEverything() error
+
+// Prefer:
+cfg, err := ParseArgs(args)
+code := RunLoop(ctx, cfg, runner, stderr)</code></pre>
+
+  <h3>2.7 Interfaces Must Earn Their Cost</h3>
+  <p>Start with functions. Add tiny interfaces only at hard external boundaries.</p>
+  <pre><code>// Good if tests need a fake runner:
+type Runner interface {
+    Run(context.Context, Invocation) RunResult
+}</code></pre>
+
+  <h3>2.8 Concurrency Rule</h3>
+  <p>
+    Use goroutines only to wait for child processes, handle signals, or implement
+    timeouts. Do not introduce worker pools, event buses, pipelines, or global
+    channels for v1.
+  </p>
+
+  <h2>3. Anti-Patterns to Avoid</h2>
+  <ul>
+    <li>Large <code>Run</code> functions that parse flags, parse items, spawn processes, and decide policy together.</li>
+    <li>Package globals for current config, current child PID, writers, or interrupt state.</li>
+    <li>Parsing child stdout or stderr for meaning.</li>
+    <li>Shell-wrapping the main child command after <code>--</code>.</li>
+    <li>Sleeping with <code>time.Sleep</code> where interruptible sleep is required.</li>
+    <li>Adding abstractions before there are two real callers.</li>
+    <li>Tests that assert private helper call order instead of observable behavior.</li>
+  </ul>
+
+  <h2>4. Forbidden Scope</h2>
   <ul>
     <li>No agent, harness, model, or prompt concepts.</li>
     <li>No beads client integration or workflow orchestration.</li>
     <li>No structured parsing/rendering of child command output.</li>
     <li>No config files, file logging, session state, or plugin systems in v1.</li>
+    <li>No Windows-specific code, abstractions, compatibility layers, or tests in v1.</li>
     <li>No concurrency unless required for process timeout, signal, or pipe handling.</li>
   </ul>
 
-  <h2>3. Error Standards</h2>
+  <h2>5. Error Standards</h2>
   <ul>
     <li>Invalid flags/configuration are usage errors and exit <code>2</code>.</li>
     <li>Source command failures and internal failures exit <code>1</code>.</li>
@@ -51,15 +133,15 @@
     <li>Do not print stack traces or debug dumps in normal operation.</li>
   </ul>
 
-  <h2>4. Output Standards</h2>
+  <h2>6. Output Standards</h2>
   <ul>
     <li>Never write <code>afk</code> status/control text to stdout.</li>
     <li>Child stdout and stderr must pass through unchanged.</li>
-    <li>Status lines are optional, minimal, human-readable, and stderr-only.</li>
-    <li>Tests should not depend on decorative status wording.</li>
+    <li>Routine per-iteration status is disabled by default in v1.</li>
+    <li>Required errors, timeout messages, and interrupt messages are minimal, human-readable, and stderr-only.</li>
   </ul>
 
-  <h2>5. Testing Standards</h2>
+  <h2>7. Testing Standards</h2>
   <ul>
     <li>Use Go's standard <code>testing</code> package.</li>
     <li>Prefer black-box CLI tests for product behavior.</li>
@@ -69,12 +151,37 @@
     <li>Tests must be deterministic: no network, no real beads commands, no long sleeps.</li>
     <li>Use temporary directories/files from <code>t.TempDir</code>.</li>
     <li>Use short timeouts and contexts around subprocess tests to prevent hangs.</li>
-    <li>Signal and timeout tests may use tiny helper shell commands, but keep them portable within Unix-like v1.</li>
+    <li>Signal and timeout tests may use tiny helper shell commands and only need to work on Linux/macOS.</li>
+    <li>Interrupt tests should prove graceful shutdown, hard second interrupt, interruptible sleep, and process-group cleanup.</li>
     <li>Assert stdout exactly when testing child output passthrough.</li>
     <li>Assert stderr only for required errors or broad required behavior.</li>
   </ul>
 
-  <h2>6. Test Matrix</h2>
+  <h2>8. Test Patterns</h2>
+
+  <h3>8.1 Table-Driven Pure Tests</h3>
+  <pre><code>for _, tc := range tests {
+    t.Run(tc.name, func(t *testing.T) {
+        got, err := ParseItems(tc.input)
+        if !reflect.DeepEqual(got, tc.want) { t.Fatalf("...") }
+        if (err != nil) != tc.wantErr { t.Fatalf("...") }
+    })
+}</code></pre>
+
+  <h3>8.2 Black-Box CLI Tests</h3>
+  <p>Build the binary once per package test and assert exit code, stdout, and required stderr behavior.</p>
+  <pre><code>cmd := exec.Command(bin, "-n", "3", "--", "printf", "hi\\n")
+out, err := cmd.Output()
+code := exitCode(err)
+if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
+
+  <h3>8.3 Process Tests</h3>
+  <p>
+    Use short deadlines, temp files for synchronization, and cleanup checks.
+    Never rely on long real sleeps.
+  </p>
+
+  <h2>9. Test Matrix</h2>
   <ul>
     <li><code>-n</code> runs exactly N times and sets <code>AFK_INDEX</code>.</li>
     <li>Static newline items run once per non-blank line.</li>
@@ -82,13 +189,18 @@
     <li>Dynamic <code>--items-cmd</code> refreshes batches and handles empty batches.</li>
     <li><code>--sleep</code> only applies to empty dynamic item batches.</li>
     <li><code>--fail continue</code>, <code>--fail stop</code>, and <code>--until-success</code> produce documented exit behavior.</li>
-    <li><code>--timeout</code> terminates a hung child and applies failure policy.</li>
+    <li><code>--timeout</code> terminates a hung main child process group and applies failure policy.</li>
+    <li><code>--timeout</code> terminates a hung <code>--items-cmd</code> process group and exits <code>1</code>.</li>
     <li>Invalid flag combinations exit <code>2</code>.</li>
     <li>Source command failure exits <code>1</code>.</li>
-    <li>Ctrl+C terminates the current process group and exits <code>130</code>.</li>
+    <li>Ctrl+C during a child sends graceful interrupt and exits <code>130</code>.</li>
+    <li>A second Ctrl+C hard-kills the active child process group and exits <code>130</code>.</li>
+    <li>Ctrl+C during empty-source sleep wakes immediately and exits <code>130</code>.</li>
+    <li>Grandchildren that remain in the child process group are cleaned up.</li>
+    <li>A running <code>--items-cmd</code> is also killed as a process group on interrupt.</li>
   </ul>
 
-  <h2>7. Done Criteria</h2>
+  <h2>10. Done Criteria</h2>
   <ul>
     <li><code>gofmt</code> applied.</li>
     <li><code>go test ./...</code> passes.</li>
