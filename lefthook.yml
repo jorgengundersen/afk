@@ -1,0 +1,14 @@
+pre-commit:
+  commands:
+    beads:
+      run: bd hooks run pre-commit
+
+post-merge:
+  commands:
+    beads:
+      run: bd hooks run post-merge {0}
+
+pre-push:
+  commands:
+    beads:
+      run: bd hooks run pre-push {0}

@@ -60,3 +60,5 @@ dolt.host: "havn-dolt"
 dolt.user: "root"
 
 dolt.database: "afk"
+
+export.git-add: false
