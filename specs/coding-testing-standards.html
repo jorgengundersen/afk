@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coding and Testing Standards</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { max-width: 840px; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.55 system-ui, sans-serif; }
+    h1, h2 { line-height: 1.2; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: color-mix(in srgb, CanvasText 10%, Canvas); padding: .1rem .25rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Coding and Testing Standards</h1>
+
+  <p>
+    Optimize for simple, solid, boring Go. The code should be easy for a new
+    human or agent to read in one pass.
+  </p>
+
+  <h2>1. Coding Standards</h2>
+  <ul>
+    <li>Use the Go standard library by default.</li>
+    <li>Do not add dependencies without a clear issue and spec update.</li>
+    <li>Prefer direct code over clever abstractions.</li>
+    <li>Keep functions small and name them after the one thing they do.</li>
+    <li>Keep data as plain structs and values.</li>
+    <li>Pass dependencies explicitly. Avoid package-level mutable state.</li>
+    <li>Return errors with context; handle them at entrypoints.</li>
+    <li>Use <code>errors.Is</code>/<code>errors.As</code> only when callers need typed behavior.</li>
+    <li>Run <code>gofmt</code>. Do not hand-format Go code.</li>
+    <li>Delete stale code instead of adapting removed product scope.</li>
+  </ul>
+
+  <h2>2. Forbidden Scope</h2>
+  <ul>
+    <li>No agent, harness, model, or prompt concepts.</li>
+    <li>No beads client integration or workflow orchestration.</li>
+    <li>No structured parsing/rendering of child command output.</li>
+    <li>No config files, file logging, session state, or plugin systems in v1.</li>
+    <li>No concurrency unless required for process timeout, signal, or pipe handling.</li>
+  </ul>
+
+  <h2>3. Error Standards</h2>
+  <ul>
+    <li>Invalid flags/configuration are usage errors and exit <code>2</code>.</li>
+    <li>Source command failures and internal failures exit <code>1</code>.</li>
+    <li>Child command failures are loop inputs, not automatically <code>afk</code> errors.</li>
+    <li>Error messages go to stderr and should say what failed and why.</li>
+    <li>Do not print stack traces or debug dumps in normal operation.</li>
+  </ul>
+
+  <h2>4. Output Standards</h2>
+  <ul>
+    <li>Never write <code>afk</code> status/control text to stdout.</li>
+    <li>Child stdout and stderr must pass through unchanged.</li>
+    <li>Status lines are optional, minimal, human-readable, and stderr-only.</li>
+    <li>Tests should not depend on decorative status wording.</li>
+  </ul>
+
+  <h2>5. Testing Standards</h2>
+  <ul>
+    <li>Use Go's standard <code>testing</code> package.</li>
+    <li>Prefer black-box CLI tests for product behavior.</li>
+    <li>Unit-test pure functions: validation, durations, item parsing, env construction, exit policy.</li>
+    <li>Do not test implementation details that are not contract.</li>
+    <li>Each bug fix should add a failing test when practical.</li>
+    <li>Tests must be deterministic: no network, no real beads commands, no long sleeps.</li>
+    <li>Use temporary directories/files from <code>t.TempDir</code>.</li>
+    <li>Use short timeouts and contexts around subprocess tests to prevent hangs.</li>
+    <li>Signal and timeout tests may use tiny helper shell commands, but keep them portable within Unix-like v1.</li>
+    <li>Assert stdout exactly when testing child output passthrough.</li>
+    <li>Assert stderr only for required errors or broad required behavior.</li>
+  </ul>
+
+  <h2>6. Test Matrix</h2>
+  <ul>
+    <li><code>-n</code> runs exactly N times and sets <code>AFK_INDEX</code>.</li>
+    <li>Static newline items run once per non-blank line.</li>
+    <li>Static JSON array items run once per element.</li>
+    <li>Dynamic <code>--items-cmd</code> refreshes batches and handles empty batches.</li>
+    <li><code>--sleep</code> only applies to empty dynamic item batches.</li>
+    <li><code>--fail continue</code>, <code>--fail stop</code>, and <code>--until-success</code> produce documented exit behavior.</li>
+    <li><code>--timeout</code> terminates a hung child and applies failure policy.</li>
+    <li>Invalid flag combinations exit <code>2</code>.</li>
+    <li>Source command failure exits <code>1</code>.</li>
+    <li>Ctrl+C terminates the current process group and exits <code>130</code>.</li>
+  </ul>
+
+  <h2>7. Done Criteria</h2>
+  <ul>
+    <li><code>gofmt</code> applied.</li>
+    <li><code>go test ./...</code> passes.</li>
+    <li>Behavior matches the PRD and architecture specs.</li>
+    <li>No removed-scope concepts were introduced.</li>
+  </ul>
+</body>
+</html>

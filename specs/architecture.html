@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { max-width: 880px; margin: 3rem auto; padding: 0 1.25rem; font: 16px/1.55 system-ui, sans-serif; }
+    h1, h2, h3 { line-height: 1.2; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: color-mix(in srgb, CanvasText 10%, Canvas); }
+    code { padding: .1rem .25rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; border-radius: 8px; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas); padding: .55rem .7rem; vertical-align: top; }
+    th { text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Architecture</h1>
+
+  <p>
+    <code>afk</code> is a small Go command-line program built with the standard
+    library first. The architecture should stay boring: parse flags, validate a
+    config, run a loop, execute child processes, return an exit code.
+  </p>
+
+  <h2>1. Scope Boundary</h2>
+  <p>
+    The binary is only the generic loop runner defined by the PRD. Do not add
+    agents, harnesses, models, prompts, beads clients, structured child-output
+    parsing, renderers, config files, persistent state, or session logs.
+  </p>
+
+  <h2>2. Initial Repository Shape</h2>
+  <pre><code>go.mod
+cmd/afk/main.go
+internal/afk/config.go      // flags, config, validation
+internal/afk/duration.go    // duration parsing helpers
+internal/afk/items.go       // item parsing and item source refresh
+internal/afk/policy.go      // failure and final-exit decisions
+internal/afk/loop.go        // loop orchestration
+internal/afk/exec.go        // child process execution boundary
+internal/afk/signal.go      // interrupt handling boundary</code></pre>
+  <p>
+    Use one internal package at first. Add packages or interfaces only when a
+    real boundary earns the cost.
+  </p>
+
+  <h2>3. Main Flow</h2>
+  <ol>
+    <li><code>main</code> calls an internal entrypoint and exits with its code.</li>
+    <li>Parse arguments before <code>--</code> as <code>afk</code> flags.</li>
+    <li>Require the command after <code>--</code>; execute it exactly as provided.</li>
+    <li>Validate the full config before running anything.</li>
+    <li>Install interrupt handling.</li>
+    <li>Run the selected loop driver.</li>
+    <li>Map child exits, source errors, timeouts, and interrupts to final exit codes.</li>
+  </ol>
+
+  <h2>4. Core Types</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>Config</code></td><td>Validated CLI configuration and command argv.</td></tr>
+      <tr><td><code>LoopDriver</code></td><td>Fixed count, daemon, static items, or dynamic items.</td></tr>
+      <tr><td><code>ItemBatch</code></td><td>Current parsed item batch and per-batch indexes.</td></tr>
+      <tr><td><code>Invocation</code></td><td>One child command run: argv, env additions, timeout.</td></tr>
+      <tr><td><code>RunResult</code></td><td>Child exit code plus timeout/interruption metadata.</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Keep these as plain structs and small functions. Avoid object hierarchies,
+    frameworks, global mutable state, and hidden defaults.
+  </p>
+
+  <h2>5. Pure Logic</h2>
+  <p>These functions should be easy to unit test without processes or sleeps:</p>
+  <ul>
+    <li>flag/config validation</li>
+    <li>duration parsing</li>
+    <li>JSON-array and newline item parsing</li>
+    <li>environment variable construction</li>
+    <li>failure-policy and final-exit decisions</li>
+  </ul>
+
+  <h2>6. External Boundaries</h2>
+  <ul>
+    <li>Use <code>os/exec</code> for processes.</li>
+    <li>The command after <code>--</code> is executed directly, not through a shell.</li>
+    <li><code>--items-cmd</code> is a shell command and is run as <code>/bin/sh -c</code> on Unix-like systems.</li>
+    <li>Child stdout, stderr, and stdin are inherited/pass-through by default.</li>
+    <li><code>--items-cmd</code> stdout is captured for item parsing; its stderr is written to <code>afk</code> stderr.</li>
+    <li>Non-zero <code>--items-cmd</code> exit is an <code>afk</code> source error.</li>
+    <li>Use timers from <code>time</code> and signals from <code>os/signal</code>.</li>
+  </ul>
+
+  <h2>7. Process Management</h2>
+  <p>
+    v1 targets Unix-like systems. Start each child command in its own process
+    group. On timeout or interrupt, terminate the process group, wait a short
+    grace period, then kill it if needed. Interrupt exit code is <code>130</code>.
+  </p>
+  <p>
+    <code>--timeout</code> applies to each command invocation after <code>--</code>.
+    It does not add a separate timeout for <code>--items-cmd</code>.
+  </p>
+
+  <h2>8. Duration Contract</h2>
+  <p>
+    Parse durations with Go's <code>time.ParseDuration</code>. Examples:
+    <code>500ms</code>, <code>10s</code>, <code>5m</code>, <code>1h</code>.
+    <code>--sleep</code> must be non-negative. <code>--timeout</code>, when set,
+    must be positive.
+  </p>
+
+  <h2>9. Output Contract</h2>
+  <p>
+    <code>afk</code> never writes control output to stdout. Stdout belongs to the
+    child command. Human-readable status and errors, if printed, go to stderr
+    and should be minimal.
+  </p>
+
+  <h2>10. Exit Codes</h2>
+  <ul>
+    <li><code>0</code>: requested work completed successfully under the selected policy.</li>
+    <li>child exit code: used when <code>--fail stop</code> stops on a child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
+    <li><code>1</code>: internal error, source command failure, or timeout-management failure.</li>
+    <li><code>2</code>: invalid CLI usage/configuration.</li>
+    <li><code>130</code>: user interrupt.</li>
+  </ul>
+</body>
+</html>
