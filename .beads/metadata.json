@@ -1,0 +1,10 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_server_host": "havn-dolt",
+  "dolt_server_port": 3308,
+  "dolt_server_user": "root",
+  "dolt_database": "afk",
+  "project_id": "b33957e7-c186-4a06-8348-40e0c6dac514"
+}
