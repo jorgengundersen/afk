@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PRD: Simplified afk Loop Utility</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #171717;
+      --muted: #666;
+      --border: #d8d8d8;
+      --accent: #2457c5;
+      --code-bg: #f5f5f5;
+      --callout-bg: #f7faff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101214;
+        --fg: #e8e8e8;
+        --muted: #aaa;
+        --border: #33383d;
+        --accent: #8ab4ff;
+        --code-bg: #191c20;
+        --callout-bg: #141b26;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px 72px; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { font-size: 2.25rem; margin-bottom: 0.25rem; }
+    h2 { margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; }
+    h3 { margin-top: 1.6rem; }
+    .meta { color: var(--muted); margin-bottom: 2rem; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: var(--code-bg); }
+    code { padding: 0.12rem 0.28rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--border); padding: 0.6rem 0.75rem; vertical-align: top; }
+    th { text-align: left; background: var(--code-bg); }
+    .callout {
+      background: var(--callout-bg);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    .badge { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.5rem; color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PRD: Simplified <code>afk</code> Loop Utility</h1>
+  <p class="meta"><span class="badge">Draft</span> A radically simplified, general-purpose loop runner.</p>
+
+  <section>
+    <h2>1. Product Summary</h2>
+    <p>
+      <code>afk</code> should be a small, general-purpose utility for repeatedly running a command.
+      It should not know what the command does. It should not parse the command's output. It should
+      not contain built-in support for agents, prompts, beads, structured JSON streams, or domain-specific workflows.
+    </p>
+
+    <div class="callout">
+      <strong>Core contract:</strong>
+      <p>
+        <code>afk</code> repeatedly executes one command. It may optionally choose iterations from an item list.
+        It passes loop context via environment variables. It decides whether to continue based only on exit codes.
+      </p>
+    </div>
+
+    <p>The CLI shape is:</p>
+    <pre><code>afk [loop options] -- command [args...]</code></pre>
+    <p>
+      Everything after <code>--</code> is the command to run. <code>afk</code> does not rewrite that command.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Goals</h2>
+    <ul>
+      <li>Run any command repeatedly.</li>
+      <li>Support fixed loop counts.</li>
+      <li>Support daemon mode: loop until interrupted.</li>
+      <li>Optionally drive loops from a static item list.</li>
+      <li>Optionally drive loops from a dynamic item-producing command.</li>
+      <li>Support newline-delimited and JSON-array item formats.</li>
+      <li>Sleep when a dynamic item source has no items.</li>
+      <li>Apply simple exit-code policies.</li>
+      <li>Support a per-iteration timeout so unattended loops cannot hang forever.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. Non-goals</h2>
+    <ul>
+      <li>No built-in agent harnesses.</li>
+      <li>No prompt assembly.</li>
+      <li>No beads-specific client or workflow logic.</li>
+      <li>No structured output parsing or rendering.</li>
+      <li>No placeholder substitution such as <code>{item}</code>.</li>
+      <li>No file logging in v1.</li>
+      <li>No config files in v1.</li>
+      <li>No concurrency or parallel execution in v1.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. CLI</h2>
+    <pre><code>afk [flags] -- command [args...]</code></pre>
+
+    <table>
+      <thead>
+        <tr><th>Flag</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>-n</code>, <code>--loops</code></td>
+          <td>integer</td>
+          <td></td>
+          <td>Run the command a fixed number of times.</td>
+        </tr>
+        <tr>
+          <td><code>-d</code>, <code>--daemon</code></td>
+          <td>boolean</td>
+          <td>false</td>
+          <td>Run until interrupted.</td>
+        </tr>
+        <tr>
+          <td><code>--items</code></td>
+          <td>string</td>
+          <td></td>
+          <td>Static item list. Parsed once before looping. Accepts JSON array or newline-delimited text.</td>
+        </tr>
+        <tr>
+          <td><code>--items-cmd</code></td>
+          <td>shell command</td>
+          <td></td>
+          <td>Dynamic item source. Re-run by <code>afk</code> to refresh available items. Stdout is parsed as JSON array or newline-delimited text.</td>
+        </tr>
+        <tr>
+          <td><code>--sleep</code></td>
+          <td>duration</td>
+          <td>60s</td>
+          <td>How long to sleep when <code>--items-cmd</code> returns no items.</td>
+        </tr>
+        <tr>
+          <td><code>--empty-sleeps</code></td>
+          <td>integer</td>
+          <td>0</td>
+          <td>In non-daemon mode, how many times to sleep and retry after <code>--items-cmd</code> returns no items.</td>
+        </tr>
+        <tr>
+          <td><code>--fail</code></td>
+          <td><code>continue</code> or <code>stop</code></td>
+          <td><code>continue</code></td>
+          <td>Whether a non-zero child exit code should stop the loop.</td>
+        </tr>
+        <tr>
+          <td><code>--until-success</code></td>
+          <td>boolean</td>
+          <td>false</td>
+          <td>Retry until the command exits 0, then stop. Mutually exclusive with <code>--fail stop</code>.</td>
+        </tr>
+        <tr>
+          <td><code>--timeout</code></td>
+          <td>duration</td>
+          <td>none</td>
+          <td>Maximum runtime for each individual command invocation. No timeout when unset.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>5. Run Modes</h2>
+
+    <h3>5.1 Fixed count</h3>
+    <p>Run the command exactly <code>N</code> times unless interrupted, timed out, or stopped by failure policy.</p>
+    <pre><code>afk -n 5 -- make test</code></pre>
+
+    <h3>5.2 Daemon</h3>
+    <p>Run until interrupted. Without <code>--items-cmd</code>, daemon mode runs the command back-to-back with no built-in delay. If pacing is needed, put the sleep in the command.</p>
+    <pre><code>afk -d -- ./worker</code></pre>
+
+    <h3>5.3 Static item list</h3>
+    <p>
+      <code>--items</code> provides an already-materialized list. It is parsed once. The command runs once per item.
+    </p>
+    <pre><code>afk --items "$(cat my_list.txt)" -- ./worker</code></pre>
+    <pre><code>afk --items '["a","b","c"]' -- ./worker</code></pre>
+
+    <h3>5.4 Dynamic item command</h3>
+    <p>
+      <code>--items-cmd</code> provides a command that produces a list. <code>afk</code> runs this command to refresh
+      available work. This is what makes daemon polling possible.
+    </p>
+    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+
+    <p>Recommended behavior:</p>
+    <ul>
+      <li>Run <code>--items-cmd</code>.</li>
+      <li>If it returns items, process the batch one item at a time.</li>
+      <li>When the batch is exhausted, run <code>--items-cmd</code> again.</li>
+      <li>If it returns no items in daemon mode, sleep and retry forever.</li>
+      <li>If it returns no items in non-daemon mode, sleep and retry while <code>--empty-sleeps</code> quota remains.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>6. Item Parsing</h2>
+
+    <h3>6.1 JSON array</h3>
+    <p>
+      If item source output is valid JSON and the top-level value is an array, each array element is one item.
+    </p>
+    <ul>
+      <li>String elements become their string value.</li>
+      <li>Number, boolean, object, array, and null elements become compact JSON in <code>AFK_ITEM</code>.</li>
+      <li>An empty array means no items.</li>
+    </ul>
+
+    <h3>6.2 Newline-delimited text</h3>
+    <p>
+      If item source output is not a JSON array, parse it as newline-delimited text.
+    </p>
+    <ul>
+      <li>Delimiter is <code>\n</code>.</li>
+      <li>Trailing final newline is ignored.</li>
+      <li>Blank lines are ignored.</li>
+      <li>Non-blank line content is preserved except for line-ending removal.</li>
+    </ul>
+
+    <h3>6.3 Source exclusivity</h3>
+    <p>Only one item source may be set:</p>
+    <ul>
+      <li><code>--items</code></li>
+      <li><code>--items-cmd</code></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>7. Environment Variables</h2>
+    <p>
+      <code>afk</code> never rewrites the command. It passes loop context through environment variables.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Variable</th><th>Set when</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>AFK_INDEX</code></td>
+          <td>Always</td>
+          <td>1-based global loop iteration number.</td>
+        </tr>
+        <tr>
+          <td><code>AFK_ITEM</code></td>
+          <td>Item-driven loops</td>
+          <td>Current item value. JSON objects/arrays are compact JSON.</td>
+        </tr>
+        <tr>
+          <td><code>AFK_ITEM_INDEX</code></td>
+          <td>Item-driven loops</td>
+          <td>0-based index of the item within the current batch.</td>
+        </tr>
+        <tr>
+          <td><code>AFK_ITEM_COUNT</code></td>
+          <td>Item-driven loops</td>
+          <td>Total number of items in the current batch.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <pre><code>afk --items '["apple","banana"]' -- sh -c 'echo "$AFK_INDEX $AFK_ITEM_INDEX/$AFK_ITEM_COUNT $AFK_ITEM"'</code></pre>
+    <p>Expected output:</p>
+    <pre><code>1 0/2 apple
+2 1/2 banana</code></pre>
+  </section>
+
+  <section>
+    <h2>8. Sleep Semantics</h2>
+    <p>
+      In v1, <code>--sleep</code> only means: how long to wait when <code>--items-cmd</code> returns no items.
+      It does not sleep between every successful loop iteration.
+    </p>
+
+    <h3>8.1 Daemon mode</h3>
+    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+    <p>If no items are returned, sleep for five minutes, then run <code>--items-cmd</code> again.</p>
+
+    <h3>8.2 Non-daemon mode</h3>
+    <pre><code>afk --items-cmd "bd ready --json" --empty-sleeps 3 --sleep 30s -- ./worker</code></pre>
+    <p>If no items are returned, sleep and retry up to three times. Sleeps do not count as command iterations.</p>
+
+    <h3>8.3 Sleeping between all loops</h3>
+    <p>
+      No dedicated flag in v1. Users can put sleep in the command if needed:
+    </p>
+    <pre><code>afk -n 10 -- sh -c './worker; sleep 5'</code></pre>
+  </section>
+
+  <section>
+    <h2>9. Failure Policy</h2>
+    <p>
+      <code>afk</code> only observes the command exit code. Stdout and stderr are not interpreted.
+    </p>
+
+    <table>
+      <thead>
+        <tr><th>Policy</th><th>Behavior</th><th>Example</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>--fail continue</code></td>
+          <td>Non-zero exits are reported, but the loop continues.</td>
+          <td><code>afk -n 20 --fail continue -- ./agent</code></td>
+        </tr>
+        <tr>
+          <td><code>--fail stop</code></td>
+          <td>First non-zero exit stops the loop. <code>afk</code> exits with that code.</td>
+          <td><code>afk -n 5 --fail stop -- go test ./...</code></td>
+        </tr>
+        <tr>
+          <td><code>--until-success</code></td>
+          <td>Failures continue; first zero exit stops the loop with exit code 0.</td>
+          <td><code>afk -d --until-success -- curl -f http://localhost:3000/health</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>Recommended final exit behavior:</p>
+    <ul>
+      <li><code>--fail continue</code>: exit 0 after completing the requested loop work, unless an internal/source error occurs.</li>
+      <li><code>--fail stop</code>: exit with the first non-zero child exit code.</li>
+      <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1.</li>
+      <li>Interrupted by signal: exit 130.</li>
+      <li>Internal error, invalid config, source command failure, or timeout handling failure: exit 1 or 2 as appropriate.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>10. Timeout</h2>
+    <p>
+      <code>--timeout</code> limits each individual command invocation. It prevents an unattended loop from getting stuck forever
+      on one hung child process.
+    </p>
+    <pre><code>afk -n 10 --timeout 30m -- ./worker</code></pre>
+    <p>
+      If the timeout expires, <code>afk</code> terminates the child process group. The iteration is treated as a failure and then
+      handled by the selected failure policy.
+    </p>
+  </section>
+
+  <section>
+    <h2>11. Output</h2>
+    <p>
+      Child stdout and stderr pass through directly. <code>afk</code> does not parse, render, or transform child output.
+    </p>
+    <p>
+      <code>afk</code> may print minimal status lines to stderr, such as:
+    </p>
+    <pre><code>[afk] iteration=1 start
+[afk] iteration=1 exit=0
+[afk] no items; sleeping 60s</code></pre>
+    <p>
+      No file logging in v1. If users need logs, they can redirect output or make the child command log for itself.
+    </p>
+  </section>
+
+  <section>
+    <h2>12. Signals and Process Management</h2>
+    <ul>
+      <li>On first interrupt, stop scheduling new iterations.</li>
+      <li>If a child command is running, terminate the child process group.</li>
+      <li>After a short grace period, kill the child process group if needed.</li>
+      <li>Exit with code 130 on user interrupt.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>13. Validation Rules</h2>
+    <ul>
+      <li>A command after <code>--</code> is required.</li>
+      <li>At least one loop driver is required: <code>--loops</code>, <code>--daemon</code>, <code>--items</code>, or <code>--items-cmd</code>.</li>
+      <li><code>--loops</code> must be a positive integer.</li>
+      <li><code>--loops</code> and <code>--daemon</code> are mutually exclusive.</li>
+      <li><code>--loops</code> and item sources are mutually exclusive, because both determine iteration count.</li>
+      <li><code>--items</code> and <code>--items-cmd</code> are mutually exclusive.</li>
+      <li><code>--daemon</code> may be combined with <code>--items-cmd</code>.</li>
+      <li><code>--daemon</code> and <code>--items</code> are mutually exclusive, to avoid replaying a static list forever.</li>
+      <li><code>--sleep</code> must be non-negative.</li>
+      <li><code>--empty-sleeps</code> must be non-negative.</li>
+      <li><code>--fail</code> must be <code>continue</code> or <code>stop</code>.</li>
+      <li><code>--until-success</code> is mutually exclusive with <code>--fail stop</code>.</li>
+      <li><code>--timeout</code>, when set, must be positive.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>14. Examples</h2>
+
+    <h3>Run a command five times</h3>
+    <pre><code>afk -n 5 -- echo hi</code></pre>
+
+    <h3>Run once per newline item</h3>
+    <pre><code>afk --items $'a\nb\nc' -- sh -c 'echo "$AFK_ITEM"'</code></pre>
+
+    <h3>Run once per JSON item</h3>
+    <pre><code>afk --items '[{"id":"a"},{"id":"b"}]' -- sh -c 'echo "$AFK_ITEM" | jq -r .id'</code></pre>
+
+    <h3>Poll a dynamic work source forever</h3>
+    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+
+    <h3>Retry until a service is healthy</h3>
+    <pre><code>afk -d --until-success --timeout 15s -- sh -c 'curl -f http://localhost:3000/health || { sleep 10; exit 1; }'</code></pre>
+
+    <h3>Strict failure behavior</h3>
+    <pre><code>afk -n 5 --fail stop -- go test ./...</code></pre>
+  </section>
+
+  <section>
+    <h2>15. Migration from Current <code>afk</code></h2>
+    <p>Remove from the core binary:</p>
+    <ul>
+      <li><code>--harness</code></li>
+      <li><code>--model</code></li>
+      <li><code>--raw</code></li>
+      <li><code>--harness-args</code></li>
+      <li><code>-p</code> prompt handling</li>
+      <li>beads client integration</li>
+      <li>prompt assembly</li>
+      <li>structured output parsing/rendering</li>
+      <li>session log files</li>
+    </ul>
+
+    <p>Domain-specific workflows move into wrapper scripts:</p>
+    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./work-on-one-bead</code></pre>
+  </section>
+
+  <section>
+    <h2>16. Acceptance Criteria</h2>
+    <ul>
+      <li><code>afk -n 3 -- echo hi</code> prints <code>hi</code> three times and exits 0.</li>
+      <li><code>afk --items $'a\nb' -- sh -c 'echo "$AFK_ITEM"'</code> prints <code>a</code> then <code>b</code>.</li>
+      <li><code>afk --items '["a","b"]' -- sh -c 'echo "$AFK_ITEM"'</code> prints <code>a</code> then <code>b</code>.</li>
+      <li><code>afk --items-cmd "printf 'a\nb\n'" -- sh -c 'echo "$AFK_ITEM"'</code> runs twice.</li>
+      <li>When <code>--items-cmd</code> returns no items in daemon mode, <code>afk</code> sleeps and retries.</li>
+      <li>When <code>--items-cmd</code> returns no items in non-daemon mode, <code>afk</code> respects <code>--empty-sleeps</code>.</li>
+      <li><code>AFK_INDEX</code> is set for every command invocation.</li>
+      <li><code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code> are set for item-driven invocations.</li>
+      <li><code>--fail stop</code> stops on the first non-zero child exit.</li>
+      <li><code>--until-success</code> stops on the first zero child exit.</li>
+      <li><code>--timeout</code> terminates a hung child process and applies failure policy.</li>
+      <li>Child stdout/stderr are passed through without parsing or transformation.</li>
+      <li>Ctrl+C terminates the current child process group and exits 130.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>17. Explicitly Deferred</h2>
+    <ul>
+      <li><code>--items-file</code> — users can use <code>--items "$(cat file)"</code> or <code>--items-cmd "cat file"</code>.</li>
+      <li>Placeholder substitution like <code>{item}</code>.</li>
+      <li>A dedicated interval flag for sleeping between every successful loop.</li>
+      <li>Quiet/verbose modes.</li>
+      <li>Dry-run mode.</li>
+      <li>File logging.</li>
+      <li>Config files.</li>
+      <li>Parallel execution.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>
