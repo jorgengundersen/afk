@@ -107,7 +107,7 @@ type Runner interface {
   <ul>
     <li>Large <code>Run</code> functions that parse flags, parse items, spawn processes, and decide policy together.</li>
     <li>Package globals for current config, current child PID, writers, or interrupt state.</li>
-    <li>Parsing child stdout or stderr for meaning.</li>
+    <li>Parsing main child stdout or stderr for meaning.</li>
     <li>Shell-wrapping the main child command after <code>--</code>.</li>
     <li>Sleeping with <code>time.Sleep</code> where interruptible sleep is required.</li>
     <li>Adding abstractions before there are two real callers.</li>
@@ -135,10 +135,12 @@ type Runner interface {
 
   <h2>6. Output Standards</h2>
   <ul>
-    <li>Never write <code>afk</code> status/control text to stdout.</li>
-    <li>Child stdout and stderr must pass through unchanged.</li>
+    <li>Never write <code>afk</code> status/control text to stdout, except explicit help output.</li>
+    <li>Main child stdout and stderr must pass through unchanged on their original streams.</li>
+    <li>Do not merge stdout and stderr, prefix child lines, strip bytes, or reinterpret encodings.</li>
+    <li><code>--items-cmd</code> stdout is captured as item-source data, not passed through; its stderr is passed through unchanged.</li>
     <li>Routine per-iteration status is disabled by default in v1.</li>
-    <li>Required errors, timeout messages, and interrupt messages are minimal, human-readable, and stderr-only.</li>
+    <li>Required errors, usage errors, timeout messages, and interrupt messages are minimal, human-readable, and stderr-only.</li>
   </ul>
 
   <h2>7. Testing Standards</h2>

@@ -89,12 +89,13 @@
 
   <h2>8. Output Is Not Observability</h2>
   <p>
-    Child stdout and stderr pass through unchanged. <code>afk</code> does not
-    parse, render, summarize, or transform child output.
+    Main child stdout and stderr pass through unchanged. <code>afk</code> does not
+    parse, render, summarize, or transform main child output.
   </p>
   <p>
-    <code>afk</code> may print minimal human-readable status to stderr. Never
-    emit control/status output on stdout. No file logging in v1.
+    <code>afk</code> does not print routine status by default. Required diagnostics
+    are minimal and go to stderr. Never emit control/status output on stdout,
+    except explicit help output. No file logging in v1.
   </p>
 
   <h2>9. Delete Before Abstracting</h2>

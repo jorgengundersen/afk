@@ -174,7 +174,7 @@
           <td><code>--timeout</code></td>
           <td>duration</td>
           <td>none</td>
-          <td>Maximum runtime for each individual command invocation. No timeout when unset.</td>
+          <td>Maximum runtime for each spawned command invocation, including <code>--items-cmd</code>. No timeout when unset.</td>
         </tr>
       </tbody>
     </table>
@@ -209,9 +209,10 @@
     <ul>
       <li>Run <code>--items-cmd</code>.</li>
       <li>If it returns items, process the batch one item at a time.</li>
-      <li>When the batch is exhausted, run <code>--items-cmd</code> again.</li>
+      <li>In non-daemon mode, exit after processing the first non-empty batch.</li>
+      <li>In daemon mode, when the batch is exhausted, run <code>--items-cmd</code> again.</li>
       <li>If it returns no items in daemon mode, sleep and retry forever.</li>
-      <li>If it returns no items in non-daemon mode, sleep and retry while <code>--empty-sleeps</code> quota remains.</li>
+      <li>If it returns no items in non-daemon mode, sleep and retry while <code>--empty-sleeps</code> quota remains, then exit 0 if no items were found.</li>
     </ul>
   </section>
 
@@ -235,8 +236,9 @@
     <ul>
       <li>Delimiter is <code>\n</code>.</li>
       <li>Trailing final newline is ignored.</li>
+      <li>A line is blank if trimming Unicode whitespace leaves an empty string.</li>
       <li>Blank lines are ignored.</li>
-      <li>Non-blank line content is preserved except for line-ending removal.</li>
+      <li>Non-blank line content is preserved exactly except for line-ending removal.</li>
     </ul>
 
     <h3>6.3 Source exclusivity</h3>
@@ -250,7 +252,7 @@
   <section>
     <h2>7. Environment Variables</h2>
     <p>
-      <code>afk</code> never rewrites the command. It passes loop context through environment variables.
+      <code>afk</code> never rewrites the main child command. It passes loop context to main child invocations through environment variables.
     </p>
     <table>
       <thead>
@@ -279,6 +281,15 @@
         </tr>
       </tbody>
     </table>
+
+    <p>
+      <code>afk</code> constructs each child environment from the parent environment plus loop context.
+      It always overrides <code>AFK_INDEX</code>. In item-driven loops, it overrides
+      <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code>.
+      In non-item loops, inherited <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and
+      <code>AFK_ITEM_COUNT</code> are removed so stale item context cannot leak into the child.
+      <code>--items-cmd</code> receives the parent environment except these <code>AFK_*</code> loop-context variables are removed.
+    </p>
 
     <pre><code>afk --items '["apple","banana"]' -- sh -c 'echo "$AFK_INDEX $AFK_ITEM_INDEX/$AFK_ITEM_COUNT $AFK_ITEM"'</code></pre>
     <p>Expected output:</p>
@@ -311,7 +322,7 @@
   <section>
     <h2>9. Failure Policy</h2>
     <p>
-      <code>afk</code> only observes the command exit code. Stdout and stderr are not interpreted.
+      For the main child command, <code>afk</code> only observes the exit code. Main child stdout and stderr are not interpreted.
     </p>
 
     <table>
@@ -341,7 +352,7 @@
     <ul>
       <li><code>--fail continue</code>: exit 0 after completing the requested loop work, unless an internal/source error occurs.</li>
       <li><code>--fail stop</code>: exit with the first non-zero child exit code.</li>
-      <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1.</li>
+      <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1. For v1, this policy is valid only with <code>--loops</code> or <code>--daemon</code>, not item sources.</li>
       <li>Interrupted by signal: exit 130.</li>
       <li>Internal error, invalid config, source command failure, or timeout handling failure: exit 1 or 2 as appropriate.</li>
     </ul>
@@ -350,27 +361,28 @@
   <section>
     <h2>10. Timeout</h2>
     <p>
-      <code>--timeout</code> limits each individual command invocation. It prevents an unattended loop from getting stuck forever
+      <code>--timeout</code> limits each command process group started by <code>afk</code>: both the main child command
+      and <code>--items-cmd</code>. It prevents an unattended loop from getting stuck forever
       on one hung child process.
     </p>
     <pre><code>afk -n 10 --timeout 30m -- ./worker</code></pre>
     <p>
-      If the timeout expires, <code>afk</code> terminates the child process group. The iteration is treated as a failure and then
-      handled by the selected failure policy.
+      If the main child command times out, <code>afk</code> terminates the child process group and treats the iteration
+      as synthetic child exit code <code>124</code>, then handles it by the selected failure policy. If
+      <code>--items-cmd</code> times out, it is an <code>afk</code> source error and exits <code>1</code>.
     </p>
   </section>
 
   <section>
     <h2>11. Output</h2>
     <p>
-      Child stdout and stderr pass through directly. <code>afk</code> does not parse, render, or transform child output.
+      Main child stdout and stderr pass through directly. <code>afk</code> does not parse, render, or transform main child output. <code>--items-cmd</code> stdout is item-source data and is captured for parsing; its stderr passes through unchanged.
     </p>
     <p>
-      <code>afk</code> may print minimal status lines to stderr, such as:
+      By default, <code>afk</code> prints no routine per-iteration status lines. Stdout belongs to the child command,
+      except for explicit CLI help output such as <code>--help</code>. <code>afk</code> diagnostics, usage errors,
+      timeout messages, interrupt messages, and other control output go to stderr and should be minimal.
     </p>
-    <pre><code>[afk] iteration=1 start
-[afk] iteration=1 exit=0
-[afk] no items; sleeping 60s</code></pre>
     <p>
       No file logging in v1. If users need logs, they can redirect output or make the child command log for itself.
     </p>
@@ -397,10 +409,11 @@
       <li><code>--items</code> and <code>--items-cmd</code> are mutually exclusive.</li>
       <li><code>--daemon</code> may be combined with <code>--items-cmd</code>.</li>
       <li><code>--daemon</code> and <code>--items</code> are mutually exclusive, to avoid replaying a static list forever.</li>
-      <li><code>--sleep</code> must be non-negative.</li>
-      <li><code>--empty-sleeps</code> must be non-negative.</li>
+      <li>Explicit <code>--sleep</code> is valid only with <code>--items-cmd</code> and must be non-negative.</li>
+      <li>Explicit <code>--empty-sleeps</code> is valid only with <code>--items-cmd</code> and must be non-negative.</li>
       <li><code>--fail</code> must be <code>continue</code> or <code>stop</code>.</li>
       <li><code>--until-success</code> is mutually exclusive with <code>--fail stop</code>.</li>
+      <li><code>--until-success</code> requires <code>--loops</code> or <code>--daemon</code> and is invalid with item sources in v1.</li>
       <li><code>--timeout</code>, when set, must be positive.</li>
     </ul>
   </section>
@@ -452,15 +465,15 @@
       <li><code>afk -n 3 -- echo hi</code> prints <code>hi</code> three times and exits 0.</li>
       <li><code>afk --items $'a\nb' -- sh -c 'echo "$AFK_ITEM"'</code> prints <code>a</code> then <code>b</code>.</li>
       <li><code>afk --items '["a","b"]' -- sh -c 'echo "$AFK_ITEM"'</code> prints <code>a</code> then <code>b</code>.</li>
-      <li><code>afk --items-cmd "printf 'a\nb\n'" -- sh -c 'echo "$AFK_ITEM"'</code> runs twice.</li>
+      <li><code>afk --items-cmd "printf 'a\nb\n'" -- sh -c 'echo "$AFK_ITEM"'</code> processes one non-empty dynamic batch, runs twice, and exits 0.</li>
       <li>When <code>--items-cmd</code> returns no items in daemon mode, <code>afk</code> sleeps and retries.</li>
       <li>When <code>--items-cmd</code> returns no items in non-daemon mode, <code>afk</code> respects <code>--empty-sleeps</code>.</li>
-      <li><code>AFK_INDEX</code> is set for every command invocation.</li>
+      <li><code>AFK_INDEX</code> is set for every main child invocation.</li>
       <li><code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code> are set for item-driven invocations.</li>
       <li><code>--fail stop</code> stops on the first non-zero child exit.</li>
       <li><code>--until-success</code> stops on the first zero child exit.</li>
       <li><code>--timeout</code> terminates a hung child process and applies failure policy.</li>
-      <li>Child stdout/stderr are passed through without parsing or transformation.</li>
+      <li>Main child stdout/stderr are passed through without parsing or transformation.</li>
       <li>Ctrl+C terminates the current child process group and exits 130.</li>
     </ul>
   </section>

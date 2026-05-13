@@ -97,7 +97,9 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>The command after <code>--</code> is executed directly, not through a shell.</li>
     <li><code>--items-cmd</code> is a shell command and is run as <code>/bin/sh -c</code> on Unix-like systems.</li>
     <li>The main command after <code>--</code> inherits/pass-throughs stdin, stdout, and stderr.</li>
-    <li><code>--items-cmd</code> stdout is captured for item parsing; its stderr is written to <code>afk</code> stderr.</li>
+    <li>The main command's stdout and stderr are not captured, merged, buffered, parsed, prefixed, or transformed by <code>afk</code>.</li>
+    <li><code>--items-cmd</code> stdout is captured for item parsing and is not echoed to stdout; its stderr is written to <code>afk</code> stderr unchanged.</li>
+    <li><code>--items-cmd</code> stdin is closed or connected to an empty reader, never inherited from interactive stdin.</li>
     <li>Non-zero <code>--items-cmd</code> exit is an <code>afk</code> source error.</li>
     <li>Use timers from <code>time</code> and signals from <code>os/signal</code>.</li>
   </ul>
@@ -121,7 +123,9 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     The guarantee covers processes that remain in the process group created by
     <code>afk</code>. If a child intentionally daemonizes, calls
     <code>setsid</code>, changes process group, or double-forks, cleanup is best
-    effort and out of v1 supervisor scope.
+    effort and out of v1 supervisor scope. Interactive terminal programs that
+    require foreground process-group control are not a v1 focus; <code>afk</code>
+    is optimized for unattended commands.
   </p>
 
   <h3>8.2 First Interrupt: Graceful Shutdown</h3>
@@ -176,15 +180,18 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
 
   <h2>11. Output Contract</h2>
   <p>
-    <code>afk</code> never writes control output to stdout. Stdout belongs to the
-    child command. Human-readable status and errors, if printed, go to stderr
-    and should be minimal.
+    <code>afk</code> never writes control output to stdout, except explicit help
+    output. Stdout belongs to the child command. Routine per-iteration status is
+    disabled by default. Errors, usage failures, timeout messages, interrupt
+    messages, and other required diagnostics go to stderr and should be minimal.
   </p>
 
   <h2>12. Exit Codes</h2>
   <ul>
     <li><code>0</code>: requested work completed successfully under the selected policy.</li>
     <li>child exit code: used when <code>--fail stop</code> stops on a child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
+    <li><code>126</code>/<code>127</code>: synthetic main-child exit codes for cannot-execute/not-found start failures when surfaced by the selected failure policy.</li>
+    <li><code>124</code>: synthetic main-child exit code for timeout when surfaced by the selected failure policy.</li>
     <li><code>1</code>: internal error, source command failure, or timeout-management failure.</li>
     <li><code>2</code>: invalid CLI usage/configuration.</li>
     <li><code>130</code>: user interrupt.</li>
