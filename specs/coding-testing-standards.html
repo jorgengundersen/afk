@@ -197,9 +197,12 @@ if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
     <li><code>--timeout</code> terminates a hung <code>--items-cmd</code> process group and exits <code>1</code>.</li>
     <li>The command separator <code>--</code> is required.</li>
     <li>Unknown flags, missing child command, and invalid flag combinations exit <code>2</code>.</li>
-    <li><code>-h</code> and <code>--help</code> print usage to stdout and exit <code>0</code>.</li>
+    <li><code>-h</code> and <code>--help</code> print usage to stdout, exit <code>0</code>, and do not require <code>--</code>.</li>
     <li>Source command failure exits <code>1</code>.</li>
-    <li>Main child not-found and cannot-execute start failures map to synthetic child codes <code>127</code> and <code>126</code>, then follow failure policy.</li>
+    <li>Main child not-found and cannot-execute start failures print a minimal stderr diagnostic and exit immediately with <code>127</code> and <code>126</code>; they do not follow failure policy.</li>
+    <li><code>--until-success</code> is invalid with any explicit <code>--fail</code> flag.</li>
+    <li>CRLF item input removes one <code>\r</code> immediately before a line-ending <code>\n</code>; standalone <code>\r</code> is preserved.</li>
+    <li>JSON object item tests must parse JSON instead of asserting object key order.</li>
     <li>Ctrl+C during a child sends graceful interrupt and exits <code>130</code>.</li>
     <li>A second Ctrl+C hard-kills the active child process group and exits <code>130</code>.</li>
     <li>Ctrl+C during empty-source sleep wakes immediately and exits <code>130</code>.</li>

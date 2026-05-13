@@ -200,7 +200,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <ul>
     <li><code>0</code>: requested work completed successfully under the selected policy.</li>
     <li>child exit code: used when <code>--fail stop</code> stops on a child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
-    <li><code>126</code>/<code>127</code>: synthetic main-child exit codes for cannot-execute/not-found start failures when surfaced by the selected failure policy.</li>
+    <li><code>126</code>/<code>127</code>: immediate main-child start failure exits for cannot-execute/not-found. These do not follow <code>--fail</code> or <code>--until-success</code>.</li>
     <li><code>124</code>: synthetic main-child exit code for timeout when surfaced by the selected failure policy.</li>
     <li><code>1</code>: internal error, source command failure, or timeout-management failure.</li>
     <li><code>2</code>: invalid CLI usage/configuration.</li>

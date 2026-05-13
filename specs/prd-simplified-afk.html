@@ -109,7 +109,7 @@
       <li>No placeholder substitution such as <code>{item}</code>.</li>
       <li>No file logging in v1.</li>
       <li>No config files in v1.</li>
-      <li>No concurrency or parallel execution in v1.</li>
+      <li>No concurrent child command execution, worker pools, or parallel loop processing in v1. Internal goroutines are allowed only for process waiting, signal handling, timeout handling, or pipe handling.</li>
     </ul>
   </section>
 
@@ -124,7 +124,7 @@
       <li><code>afk</code> never parses, removes, or rewrites arguments after <code>--</code>.</li>
       <li>Unknown <code>afk</code> flags exit <code>2</code>.</li>
       <li>Missing child command exits <code>2</code>.</li>
-      <li><code>-h</code> and <code>--help</code> print usage to stdout and exit <code>0</code>.</li>
+      <li><code>-h</code> and <code>--help</code> are recognized before separator validation and exit <code>0</code> without requiring <code>--</code>.</li>
       <li>Help output is the only v1 <code>afk</code> control output intentionally written to stdout.</li>
     </ul>
 
@@ -179,7 +179,7 @@
           <td><code>--until-success</code></td>
           <td>boolean</td>
           <td>false</td>
-          <td>Failure policy: retry until the command exits 0, then stop. Requires <code>--loops</code> or <code>--daemon</code>. Mutually exclusive with <code>--fail stop</code>. Invalid with item sources in v1.</td>
+          <td>Failure policy: retry until the command exits 0, then stop. Requires <code>--loops</code> or <code>--daemon</code>. Invalid with item sources and with any explicit <code>--fail</code> flag in v1.</td>
         </tr>
         <tr>
           <td><code>--timeout</code></td>
@@ -237,7 +237,7 @@
     </p>
     <ul>
       <li>String elements become their string value.</li>
-      <li>Number, boolean, object, array, and null elements become compact JSON in <code>AFK_ITEM</code>.</li>
+      <li>Number, boolean, object, array, and null elements become compact JSON in <code>AFK_ITEM</code>. Whitespace is removed. Object key order is not part of the contract; callers and tests must treat object output as JSON, not byte-identical text.</li>
       <li>An empty array means no items.</li>
       <li>If item source output is valid JSON but the top-level value is not an array, parse it as newline-delimited text.</li>
     </ul>
@@ -247,8 +247,10 @@
       If item source output is not a JSON array, parse it as newline-delimited text.
     </p>
     <ul>
-      <li>Delimiter is <code>\n</code>.</li>
+      <li>Delimiter is <code>\n</code>; standalone <code>\r</code> is not a delimiter.</li>
       <li>Trailing final newline is ignored.</li>
+      <li>For CRLF input, one trailing <code>\r</code> immediately before a line-ending <code>\n</code> is removed as part of line-ending removal.</li>
+      <li>Other <code>\r</code> bytes are preserved as item content.</li>
       <li>A line is blank if trimming Unicode whitespace leaves an empty string.</li>
       <li>Blank lines are ignored.</li>
       <li>Non-blank line content is preserved exactly except for line-ending removal.</li>
@@ -375,7 +377,7 @@
     <ul>
       <li><code>--fail continue</code>: exit 0 after completing the requested loop work, unless an internal/source error occurs.</li>
       <li><code>--fail stop</code>: exit with the first non-zero child exit code.</li>
-      <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1. For v1, this policy is valid only with <code>--loops</code> or <code>--daemon</code>, not item sources.</li>
+      <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1. For v1, this policy is valid only with <code>--loops</code> or <code>--daemon</code>, not item sources, and is invalid with any explicit <code>--fail</code> flag.</li>
       <li>Interrupted by signal: exit 130.</li>
       <li>Invalid usage/configuration: exit 2.</li>
       <li>Internal error, source command failure, or timeout-management failure: exit 1.</li>
@@ -387,8 +389,8 @@
       <tbody>
         <tr><td>Main child exits normally</td><td>Use the child exit code as loop input.</td></tr>
         <tr><td>Main child is killed by signal</td><td>Treat as exit code <code>128 + signal</code>.</td></tr>
-        <tr><td>Main child command is not found</td><td>Treat as synthetic child exit code <code>127</code> and apply the selected failure policy.</td></tr>
-        <tr><td>Main child command cannot be executed because of permissions or executable format</td><td>Treat as synthetic child exit code <code>126</code> and apply the selected failure policy.</td></tr>
+        <tr><td>Main child command is not found</td><td>Print a minimal stderr diagnostic and exit immediately with <code>127</code>. This does not follow <code>--fail</code> or <code>--until-success</code>.</td></tr>
+        <tr><td>Main child command cannot be executed because of permissions or executable format</td><td>Print a minimal stderr diagnostic and exit immediately with <code>126</code>. This does not follow <code>--fail</code> or <code>--until-success</code>.</td></tr>
         <tr><td>Main child times out</td><td>Treat as synthetic child exit code <code>124</code>.</td></tr>
         <tr><td><code>--items-cmd</code> times out</td><td>Treat as source error and exit <code>1</code>.</td></tr>
         <tr><td><code>--fail continue</code></td><td>Continue after child failures and exit <code>0</code> after requested work completes.</td></tr>
@@ -464,7 +466,7 @@
       <li>Explicit <code>--sleep</code> is valid only with <code>--items-cmd</code> and must be non-negative.</li>
       <li>Explicit <code>--empty-sleeps</code> is valid only with <code>--items-cmd</code> and must be non-negative.</li>
       <li><code>--fail</code> must be <code>continue</code> or <code>stop</code>.</li>
-      <li><code>--until-success</code> is mutually exclusive with <code>--fail stop</code>.</li>
+      <li><code>--until-success</code> is mutually exclusive with any explicit <code>--fail</code> flag, including <code>--fail continue</code> and <code>--fail stop</code>.</li>
       <li><code>--until-success</code> requires <code>--loops</code> or <code>--daemon</code> and is invalid with item sources in v1.</li>
       <li><code>--timeout</code>, when set, must be positive.</li>
       <li>All invalid combinations exit <code>2</code>.</li>
@@ -494,26 +496,7 @@
   </section>
 
   <section>
-    <h2>15. Migration from Current <code>afk</code></h2>
-    <p>Remove from the core binary:</p>
-    <ul>
-      <li><code>--harness</code></li>
-      <li><code>--model</code></li>
-      <li><code>--raw</code></li>
-      <li><code>--harness-args</code></li>
-      <li><code>-p</code> prompt handling</li>
-      <li>beads client integration</li>
-      <li>prompt assembly</li>
-      <li>structured output parsing/rendering</li>
-      <li>session log files</li>
-    </ul>
-
-    <p>Domain-specific workflows move into wrapper scripts:</p>
-    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./work-on-one-bead</code></pre>
-  </section>
-
-  <section>
-    <h2>16. Acceptance Criteria</h2>
+    <h2>15. Acceptance Criteria</h2>
     <ul>
       <li><code>afk -n 3 -- echo hi</code> prints <code>hi</code> three times and exits 0.</li>
       <li><code>afk --items $'a\nb' -- sh -c 'echo "$AFK_ITEM"'</code> prints <code>a</code> then <code>b</code>.</li>
@@ -533,7 +516,7 @@
   </section>
 
   <section>
-    <h2>17. Explicitly Deferred</h2>
+    <h2>16. Explicitly Deferred</h2>
     <ul>
       <li><code>--items-file</code> — users can use <code>--items "$(cat file)"</code> or <code>--items-cmd "cat file"</code>.</li>
       <li>Placeholder substitution like <code>{item}</code>.</li>
