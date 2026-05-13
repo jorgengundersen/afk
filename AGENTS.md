@@ -5,7 +5,7 @@
 Treat the HTML specs as the source of product context:
 
 - `specs/index.html`
-- `specs/prd-simplified-afk.html`
+- `specs/prd-afk.html`
 - `specs/design-principles.html`
 - `specs/architecture.html`
 - `specs/coding-testing-standards.html`

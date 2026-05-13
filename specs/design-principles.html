@@ -25,8 +25,8 @@
   </p>
   <p>
     Do not introduce integrations for specific tools, services, workflows, or domains.
-    Do not interpret, summarize, route, parse, or render child command output.
-    Command behavior belongs in the command or script that <code>afk</code> runs.
+    Do not interpret, summarize, route, parse, or render main child command output.
+    Main child command behavior belongs in the command or script that <code>afk</code> runs.
   </p>
 
   <h2>2. Small Primitives, Thin Orchestration</h2>
@@ -63,9 +63,10 @@
     they propagate, and handle them at entry points.
   </p>
   <p>
-    Distinguish child command failure from <code>afk</code> failure. Child exit
-    codes are loop input. Invalid flags, source failures, timeout-management
-    failures, and internal failures are <code>afk</code> errors.
+    Distinguish main child command failure from <code>afk</code> failure. After a
+    successful main child start, main child exit codes are loop input. Invalid
+    flags, source failures, timeout-management failures, internal failures, and
+    main child start failures are <code>afk</code> errors.
   </p>
 
   <h2>6. Isolate External Boundaries</h2>
@@ -79,8 +80,8 @@
   <h2>7. Minimal State and Configuration</h2>
   <p>
     Push state to the edges. Runtime state should be only what the loop contract
-    requires: iteration index, current item batch, empty-sleep count, interrupt
-    state, and last child exit when needed.
+    requires: main child invocation index, current item batch, empty-sleep count,
+    interrupt state, and last main child exit code when needed.
   </p>
   <p>
     For v1, configuration is CLI flags only. No config files, persistent state,
@@ -124,7 +125,7 @@
     <li>Is the error behavior explicit?</li>
     <li>Are external systems isolated?</li>
     <li>Is this state/configuration truly necessary?</li>
-    <li>Does this preserve child output unchanged?</li>
+    <li>Does this preserve main child output unchanged?</li>
     <li>Is this context relevant and necessary?</li>
   </ol>
 </body>

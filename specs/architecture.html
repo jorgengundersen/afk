@@ -22,14 +22,14 @@
   <p>
     <code>afk</code> is a small Go command-line program built with the standard
     library first. The architecture should stay boring: parse flags, validate a
-    config, run a loop, execute child processes, return an exit code.
+    config, run a loop, execute spawned processes, return an exit code.
   </p>
 
   <h2>1. Scope Boundary</h2>
   <p>
     The binary is only the generic loop runner defined by the PRD. Do not add
     integrations for specific tools, services, workflows, or domains. Do not add
-    child-output interpretation, renderers, config files, persistent state, or session logs.
+    main child output interpretation, renderers, config files, persistent state, or session logs.
   </p>
 
   <h2>2. Platform Scope</h2>
@@ -68,12 +68,12 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>Recognize <code>-h</code> and <code>--help</code> before separator validation; print usage to stdout and exit <code>0</code>.</li>
     <li>For non-help invocations, require the command separator <code>--</code>.</li>
     <li>Parse arguments before <code>--</code> as <code>afk</code> flags.</li>
-    <li>Treat arguments after <code>--</code> as the child command and its arguments; never parse, remove, or rewrite them.</li>
-    <li>Require the command after <code>--</code>; execute it exactly as provided.</li>
+    <li>Treat arguments after <code>--</code> as the main child command and its arguments; never parse, remove, or rewrite them.</li>
+    <li>Require the main child command after <code>--</code>; execute it exactly as provided.</li>
     <li>Validate the full config before running anything.</li>
     <li>Install interrupt handling.</li>
     <li>Run the selected loop driver.</li>
-    <li>Map child exits, source errors, timeouts, and interrupts to final exit codes.</li>
+    <li>Map main child exits, source errors, timeouts, and interrupts to final exit codes.</li>
   </ol>
 
   <h2>6. Core Types</h2>
@@ -83,8 +83,8 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
       <tr><td><code>Config</code></td><td>Validated CLI configuration and command argv.</td></tr>
       <tr><td><code>LoopDriver</code></td><td>Fixed count, daemon, static items, or dynamic items.</td></tr>
       <tr><td><code>ItemBatch</code></td><td>Current parsed item batch and per-batch indexes.</td></tr>
-      <tr><td><code>Invocation</code></td><td>One child command run: argv, env additions, timeout.</td></tr>
-      <tr><td><code>RunResult</code></td><td>Child exit code plus timeout/interruption metadata.</td></tr>
+      <tr><td><code>Invocation</code></td><td>One spawned command invocation: argv, env additions, timeout.</td></tr>
+      <tr><td><code>RunResult</code></td><td>Exit code plus timeout/interruption metadata.</td></tr>
     </tbody>
   </table>
   <p>
@@ -95,7 +95,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>7. Pure Logic</h2>
   <p>These functions should be easy to unit test without processes or sleeps:</p>
   <ul>
-    <li>flag/config validation, including whether flags with defaults were explicitly set when validation depends on explicitness, such as <code>--sleep</code> and <code>--empty-sleeps</code></li>
+    <li>flag/config validation, including whether flags with defaults were explicitly set when validation or effective-policy selection depends on explicitness, such as <code>--sleep</code>, <code>--empty-sleeps</code>, and <code>--fail</code></li>
     <li>duration parsing</li>
     <li>JSON-array and newline item parsing</li>
     <li>environment variable construction</li>
@@ -105,11 +105,12 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>8. External Boundaries</h2>
   <ul>
     <li>Use <code>os/exec</code> for processes.</li>
-    <li>The command after <code>--</code> is executed directly, not through a shell.</li>
+    <li>The main child command after <code>--</code> is executed directly, not through a shell.</li>
     <li><code>--items-cmd</code> is a shell command and is run as <code>/bin/sh -c</code> on Unix-like systems.</li>
-    <li>The main command after <code>--</code> inherits/pass-throughs stdin, stdout, and stderr.</li>
-    <li>The main command's stdout and stderr are not captured, merged, buffered, parsed, prefixed, or transformed by <code>afk</code>.</li>
+    <li>The main child command after <code>--</code> inherits stdin and passes through stdout and stderr.</li>
+    <li>The main child command's stdout and stderr are not captured, merged, buffered, parsed, prefixed, or transformed by <code>afk</code>.</li>
     <li><code>--items-cmd</code> stdout is captured for item parsing and is not echoed to stdout; its stderr is written to <code>afk</code> stderr unchanged.</li>
+    <li>If a <code>--items-cmd</code> invocation exits non-zero or times out, its captured stdout is discarded and not parsed as items.</li>
     <li><code>--items-cmd</code> stdin is closed or connected to an empty reader, never inherited from interactive stdin.</li>
     <li>Non-zero <code>--items-cmd</code> exit is an <code>afk</code> source error.</li>
     <li>Use timers from <code>time</code> and signals from <code>os/signal</code>.</li>
@@ -118,7 +119,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>9. Process and Interrupt Management</h2>
   <p>
     Every spawned command runs in its own Unix process group. This includes the
-    main command after <code>--</code> and <code>--items-cmd</code>. Use Go's
+    main child command after <code>--</code> and <code>--items-cmd</code>. Use Go's
     standard library plus Unix process attributes such as
     <code>syscall.SysProcAttr{Setpgid: true}</code>.
   </p>
@@ -145,7 +146,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>Mark <code>afk</code> as interrupted.</li>
     <li>Stop scheduling new iterations.</li>
     <li>Wake any active <code>--sleep</code> immediately.</li>
-    <li>If a main command or <code>--items-cmd</code> is running, send <code>SIGINT</code> to its process group.</li>
+    <li>If a main child command or <code>--items-cmd</code> invocation is running, send <code>SIGINT</code> to its process group.</li>
     <li>Wait up to <code>5s</code>.</li>
     <li>If still running, send <code>SIGTERM</code> to the process group.</li>
     <li>Wait up to <code>2s</code>.</li>
@@ -164,13 +165,13 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h3>9.4 Timeout Shutdown</h3>
   <p>
     <code>--timeout</code> applies to every command process group started by
-    <code>afk</code>: the main command after <code>--</code> and
+    <code>afk</code>: the main child command after <code>--</code> and
     <code>--items-cmd</code>. On timeout, terminate the process group with
     <code>SIGTERM</code>, wait up to <code>2s</code>, then send
     <code>SIGKILL</code> if still running.
   </p>
   <p>
-    A main command timeout is treated as a child failure and handled by the
+    A main child command timeout is treated as a main child failure and handled by the
     selected failure policy. An <code>--items-cmd</code> timeout is an
     <code>afk</code> source error and exits <code>1</code>.
   </p>
@@ -192,7 +193,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>12. Output Contract</h2>
   <p>
     <code>afk</code> never writes control output to stdout, except explicit help
-    output. Stdout belongs to the child command. Routine per-iteration status is
+    output. Stdout belongs to the main child command. Routine status is
     disabled by default. Errors, usage failures, timeout messages, interrupt
     messages, and other required diagnostics go to stderr and should be minimal.
   </p>
@@ -200,9 +201,9 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>13. Exit Codes</h2>
   <ul>
     <li><code>0</code>: requested work completed successfully under the selected policy.</li>
-    <li>child exit code: used when <code>--fail stop</code> stops on a child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
-    <li><code>126</code>/<code>127</code>: immediate main-child start failure exits for cannot-execute/not-found. These do not follow <code>--fail</code> or <code>--until-success</code>.</li>
-    <li><code>124</code>: synthetic main-child exit code for timeout when surfaced by the selected failure policy.</li>
+    <li>main child exit code: used when <code>--fail stop</code> stops on a main child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
+    <li><code>126</code>/<code>127</code>: immediate main child start failure exits for cannot-execute/not-found. These do not follow <code>--fail</code> or <code>--until-success</code>.</li>
+    <li><code>124</code>: synthetic main child exit code for timeout when surfaced by the selected failure policy.</li>
     <li><code>1</code>: internal error, source command failure, or timeout-management failure.</li>
     <li><code>2</code>: invalid CLI usage/configuration.</li>
     <li><code>130</code>: user interrupt.</li>
