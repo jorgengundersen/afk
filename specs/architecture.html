@@ -28,8 +28,8 @@
   <h2>1. Scope Boundary</h2>
   <p>
     The binary is only the generic loop runner defined by the PRD. Do not add
-    agents, harnesses, models, prompts, beads clients, structured child-output
-    parsing, renderers, config files, persistent state, or session logs.
+    integrations for specific tools, services, workflows, or domains. Do not add
+    child-output interpretation, renderers, config files, persistent state, or session logs.
   </p>
 
   <h2>2. Platform Scope</h2>
@@ -65,7 +65,8 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>5. Main Flow</h2>
   <ol>
     <li><code>main</code> calls an internal entrypoint and exits with its code.</li>
-    <li>Require the command separator <code>--</code>.</li>
+    <li>Recognize <code>-h</code> and <code>--help</code> before separator validation; print usage to stdout and exit <code>0</code>.</li>
+    <li>For non-help invocations, require the command separator <code>--</code>.</li>
     <li>Parse arguments before <code>--</code> as <code>afk</code> flags.</li>
     <li>Treat arguments after <code>--</code> as the child command and its arguments; never parse, remove, or rewrite them.</li>
     <li>Require the command after <code>--</code>; execute it exactly as provided.</li>
@@ -94,7 +95,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <h2>7. Pure Logic</h2>
   <p>These functions should be easy to unit test without processes or sleeps:</p>
   <ul>
-    <li>flag/config validation</li>
+    <li>flag/config validation, including whether flags with defaults were explicitly set when validation depends on explicitness, such as <code>--sleep</code> and <code>--empty-sleeps</code></li>
     <li>duration parsing</li>
     <li>JSON-array and newline item parsing</li>
     <li>environment variable construction</li>
@@ -156,8 +157,8 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
   <p>
     If another <code>SIGINT</code> arrives while graceful shutdown is in
     progress, immediately send <code>SIGKILL</code> to the current process group,
-    best-effort wait for the immediate child, and exit <code>130</code>. Do not
-    wait through the graceful timers again.
+    wait up to <code>500ms</code> for the immediate child, and exit
+    <code>130</code>. Do not wait through the graceful timers again.
   </p>
 
   <h3>9.4 Timeout Shutdown</h3>

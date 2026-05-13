@@ -65,8 +65,8 @@
     <h2>1. Product Summary</h2>
     <p>
       <code>afk</code> should be a small, general-purpose utility for repeatedly running a command.
-      It should not know what the command does. It should not parse the command's output. It should
-      not contain built-in support for agents, prompts, beads, structured JSON streams, or domain-specific workflows.
+      It should not know what the command does. It should not parse the command's output. Behavior,
+      logging, workflow logic, network access, and domain-specific handling belong in the command or script that <code>afk</code> runs.
     </p>
 
     <div class="callout">
@@ -102,10 +102,9 @@
   <section>
     <h2>3. Non-goals</h2>
     <ul>
-      <li>No built-in agent harnesses.</li>
-      <li>No prompt assembly.</li>
-      <li>No beads-specific client or workflow logic.</li>
-      <li>No structured output parsing or rendering.</li>
+      <li>No integrations for specific tools, services, workflows, or domains.</li>
+      <li>No child command output interpretation, summarization, routing, parsing, or rendering.</li>
+      <li>No child command input generation beyond environment variables defined by this spec.</li>
       <li>No placeholder substitution such as <code>{item}</code>.</li>
       <li>No file logging in v1.</li>
       <li>No config files in v1.</li>
@@ -214,7 +213,11 @@
       <code>--items-cmd</code> provides a command that produces a list. <code>afk</code> runs this command to refresh
       available work. This is what makes daemon polling possible.
     </p>
-    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+    <pre><code>afk -d --items-cmd "./list-work" --sleep 5m -- ./worker</code></pre>
+    <p>
+      The item command may print either newline-delimited text or a JSON array.
+      For example, <code>./list-work</code> and <code>some-command --json</code> are both valid item-source shapes if their stdout matches one of those formats.
+    </p>
 
     <p>V1 behavior:</p>
     <ul>
@@ -250,7 +253,7 @@
       <li>Delimiter is <code>\n</code>; standalone <code>\r</code> is not a delimiter.</li>
       <li>Trailing final newline is ignored.</li>
       <li>For CRLF input, one trailing <code>\r</code> immediately before a line-ending <code>\n</code> is removed as part of line-ending removal.</li>
-      <li>Other <code>\r</code> bytes are preserved as item content.</li>
+      <li>Other <code>\r</code> bytes in non-blank lines are preserved as item content.</li>
       <li>A line is blank if trimming Unicode whitespace leaves an empty string.</li>
       <li>Blank lines are ignored.</li>
       <li>Non-blank line content is preserved exactly except for line-ending removal.</li>
@@ -310,7 +313,7 @@
       It always overrides <code>AFK_INDEX</code>. In item-driven loops, it overrides
       <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code>.
       In non-item loops, inherited <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and
-      <code>AFK_ITEM_COUNT</code> are removed so stale item context cannot leak into the child.
+      <code>AFK_ITEM_COUNT</code> are removed so unrelated item context cannot leak into the child.
       <code>--items-cmd</code> receives the parent environment except <code>AFK_INDEX</code>,
       <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code>
       are removed; it gets no loop context because it runs before the next main child invocation exists.
@@ -330,11 +333,11 @@
     </p>
 
     <h3>8.1 Daemon mode</h3>
-    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+    <pre><code>afk -d --items-cmd "./list-work" --sleep 5m -- ./worker</code></pre>
     <p>If no items are returned, sleep for five minutes, then run <code>--items-cmd</code> again.</p>
 
     <h3>8.2 Non-daemon mode</h3>
-    <pre><code>afk --items-cmd "bd ready --json" --empty-sleeps 3 --sleep 30s -- ./worker</code></pre>
+    <pre><code>afk --items-cmd "./list-work" --empty-sleeps 3 --sleep 30s -- ./worker</code></pre>
     <p>If no items are returned, sleep and retry up to three times. Sleeps do not count as command iterations.</p>
 
     <h3>8.3 Sleeping between all loops</h3>
@@ -358,7 +361,7 @@
         <tr>
           <td><code>--fail continue</code></td>
           <td>Non-zero exits are treated as loop input, but the loop continues.</td>
-          <td><code>afk -n 20 --fail continue -- ./agent</code></td>
+          <td><code>afk -n 20 --fail continue -- ./worker</code></td>
         </tr>
         <tr>
           <td><code>--fail stop</code></td>
@@ -444,8 +447,9 @@
       <li>If a main command or <code>--items-cmd</code> is running, send <code>SIGINT</code> to its process group.</li>
       <li>Wait up to <code>5s</code>, then send <code>SIGTERM</code> to the process group if still running.</li>
       <li>Wait up to <code>2s</code>, then send <code>SIGKILL</code> to the process group if still running.</li>
-      <li>If another <code>SIGINT</code> arrives during graceful shutdown, immediately send <code>SIGKILL</code> to the current process group and exit <code>130</code>.</li>
-      <li>Always wait for the immediate child before returning.</li>
+      <li>If another <code>SIGINT</code> arrives during graceful shutdown, immediately send <code>SIGKILL</code> to the current process group.</li>
+      <li>After normal interrupt or timeout shutdown, wait for the immediate child before returning.</li>
+      <li>After second-interrupt hard shutdown, wait up to <code>500ms</code> for the immediate child, then exit <code>130</code>.</li>
       <li>Exit with code <code>130</code> on user interrupt.</li>
     </ul>
   </section>
@@ -486,7 +490,7 @@
     <pre><code>afk --items '[{"id":"a"},{"id":"b"}]' -- sh -c 'echo "$AFK_ITEM" | jq -r .id'</code></pre>
 
     <h3>Poll a dynamic work source forever</h3>
-    <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
+    <pre><code>afk -d --items-cmd "./list-work" --sleep 5m -- ./worker</code></pre>
 
     <h3>Retry until a service is healthy</h3>
     <pre><code>afk -d --until-success --timeout 15s -- sh -c 'curl -f http://localhost:3000/health || { sleep 10; exit 1; }'</code></pre>

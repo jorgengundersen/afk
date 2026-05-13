@@ -18,7 +18,7 @@
 
   <p>
     Optimize for simple, solid, boring Go. The code should be easy for a new
-    human or agent to read in one pass.
+    contributor to read in one pass.
   </p>
 
   <h2>1. Coding Standards</h2>
@@ -32,7 +32,7 @@
     <li>Return errors with context; handle them at entrypoints.</li>
     <li>Use <code>errors.Is</code>/<code>errors.As</code> only when callers need typed behavior.</li>
     <li>Run <code>gofmt</code>. Do not hand-format Go code.</li>
-    <li>Delete stale code instead of adapting removed product scope.</li>
+    <li>Keep code aligned with the active specs.</li>
   </ul>
 
   <h2>2. Implementation Patterns</h2>
@@ -64,7 +64,7 @@ func EnvForIteration(index int, item *ItemContext) []string
 func ExitAfterFailure(policy FailurePolicy, code int) Decision</code></pre>
 
   <h3>2.4 Narrow Boundaries</h3>
-  <p>Only boundary code imports process/signal packages. Domain logic receives simple values.</p>
+  <p>Only boundary code imports process/signal packages. Core logic receives simple values.</p>
   <pre><code>// exec.go owns os/exec, syscall, process groups.
 func RunInvocation(ctx context.Context, inv Invocation) RunResult
 
@@ -116,9 +116,8 @@ type Runner interface {
 
   <h2>4. Forbidden Scope</h2>
   <ul>
-    <li>No agent, harness, model, or prompt concepts.</li>
-    <li>No beads client integration or workflow orchestration.</li>
-    <li>No structured parsing/rendering of child command output.</li>
+    <li>No integrations for specific tools, services, workflows, or domains.</li>
+    <li>No child command output interpretation, summarization, routing, parsing, or rendering.</li>
     <li>No config files, file logging, session state, or plugin systems in v1.</li>
     <li>No Windows-specific code, abstractions, compatibility layers, or tests in v1.</li>
     <li>No concurrency unless required for process timeout, signal, or pipe handling.</li>
@@ -128,7 +127,7 @@ type Runner interface {
   <ul>
     <li>Invalid flags/configuration are usage errors and exit <code>2</code>.</li>
     <li>Source command failures and internal failures exit <code>1</code>.</li>
-    <li>Child command failures are loop inputs, not automatically <code>afk</code> errors.</li>
+    <li>Child command exits, signals, and timeouts after a successful start are loop inputs, not automatically <code>afk</code> errors. Main child start failures are immediate execution errors.</li>
     <li>Error messages go to stderr and should say what failed and why.</li>
     <li>Do not print stack traces or debug dumps in normal operation.</li>
   </ul>
@@ -152,7 +151,7 @@ type Runner interface {
     <li>Unit-test pure functions: validation, durations, item parsing, env construction, exit policy.</li>
     <li>Do not test implementation details that are not contract.</li>
     <li>Each bug fix should add a failing test when practical.</li>
-    <li>Tests must be deterministic: no network, no real beads commands, no long sleeps.</li>
+    <li>Tests must be deterministic: no network, no external services, no long sleeps.</li>
     <li>Use temporary directories/files from <code>t.TempDir</code>.</li>
     <li>Use short timeouts and contexts around subprocess tests to prevent hangs.</li>
     <li>Signal and timeout tests may use tiny helper shell commands and only need to work on Linux/macOS.</li>
@@ -208,8 +207,8 @@ if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
     <li>Ctrl+C during empty-source sleep wakes immediately and exits <code>130</code>.</li>
     <li>Grandchildren that remain in the child process group are cleaned up.</li>
     <li>A running <code>--items-cmd</code> is also killed as a process group on interrupt.</li>
-    <li><code>--items-cmd</code> does not inherit stale <code>AFK_*</code> loop-context variables.</li>
-    <li>Non-item main child invocations remove stale item context variables.</li>
+    <li><code>--items-cmd</code> does not inherit preexisting <code>AFK_*</code> loop-context variables.</li>
+    <li>Non-item main child invocations remove preexisting item context variables.</li>
   </ul>
 
   <h2>10. Done Criteria</h2>
@@ -218,7 +217,7 @@ if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
     <li><code>go build ./cmd/afk</code> succeeds.</li>
     <li><code>go test ./...</code> passes.</li>
     <li>Behavior matches the PRD and architecture specs.</li>
-    <li>No removed-scope concepts were introduced.</li>
+    <li>No out-of-scope functionality was introduced.</li>
   </ul>
 </body>
 </html>

@@ -14,8 +14,7 @@
   <h1>Design Principles</h1>
 
   <p>
-    This project is developed primarily by AI agents. The codebase is part of
-    the prompt. Keep it small, current, explicit, and free of stale patterns.
+    Keep the project small, current, explicit, and aligned with the active specs.
   </p>
 
   <h2>1. Active Scope Wins</h2>
@@ -25,9 +24,9 @@
     <code>afk</code>, the core binary is only a generic loop runner.
   </p>
   <p>
-    Do not preserve or introduce agents, harnesses, models, prompts, beads
-    workflows, structured child-output parsing, session logs, config files, or
-    workflow orchestration.
+    Do not introduce integrations for specific tools, services, workflows, or domains.
+    Do not interpret, summarize, route, parse, or render child command output.
+    Command behavior belongs in the command or script that <code>afk</code> runs.
   </p>
 
   <h2>2. Small Primitives, Thin Orchestration</h2>
@@ -54,8 +53,8 @@
     JSON, processes, time, and signals unless there is a strong reason not to.
   </p>
   <p>
-    Never add dependencies for removed scope: agents, prompts, beads clients,
-    logging frameworks, config systems, renderers, or session management.
+    Avoid dependencies for generic CLI behavior that the standard library already covers,
+    including flags, JSON, processes, time, and signals.
   </p>
 
   <h2>5. Errors Are Contracts</h2>
@@ -72,7 +71,7 @@
   <h2>6. Isolate External Boundaries</h2>
   <p>
     Shells, child processes, timers, signals, filesystems, and third-party
-    packages enter through narrow boundaries. Domain logic uses project-owned
+    packages enter through narrow boundaries. Core logic uses project-owned
     types and simple values.
   </p>
   <p>Add interfaces only when they earn their cost.</p>
@@ -85,7 +84,7 @@
   </p>
   <p>
     For v1, configuration is CLI flags only. No config files, persistent state,
-    hidden workflow defaults, or session logs.
+    hidden defaults, or session logs.
   </p>
 
   <h2>8. Output Is Not Observability</h2>
@@ -99,20 +98,16 @@
     except explicit help output. No file logging in v1.
   </p>
 
-  <h2>9. Delete Before Abstracting</h2>
+  <h2>9. Concrete Before Abstract</h2>
   <p>
-    Build what the PRD defines, not a framework. Start concrete. Add abstraction
+    Build what the specs define, not a framework. Start concrete. Add abstraction
     only when the cost of not having it exceeds the cost of adding it.
   </p>
-  <p>
-    During rewrites, prefer deleting old abstractions over adapting concepts
-    from removed product scope.
-  </p>
 
-  <h2>10. Maintain the Prompt</h2>
+  <h2>10. Maintain the Spec Context</h2>
   <p>
-    Stale specs, examples, tests, and code patterns are context poison. If old
-    code conflicts with the active PRD, the PRD wins.
+    Specs, examples, tests, and code patterns should describe the same product.
+    Keep all project context aligned with the active specs.
   </p>
   <p>
     Keep names discoverable, APIs obvious, tests illustrative, and patterns
@@ -121,7 +116,7 @@
 
   <h2>Checklist</h2>
   <ol>
-    <li>Is this required by the active PRD?</li>
+    <li>Is this required by the active specs?</li>
     <li>Does this unit have one nameable job?</li>
     <li>Can this be pure?</li>
     <li>Is this tested at the right boundary?</li>
@@ -130,7 +125,7 @@
     <li>Are external systems isolated?</li>
     <li>Is this state/configuration truly necessary?</li>
     <li>Does this preserve child output unchanged?</li>
-    <li>Should old context be deleted instead?</li>
+    <li>Is this context relevant and necessary?</li>
   </ol>
 </body>
 </html>

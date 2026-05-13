@@ -2,15 +2,15 @@
 
 ## Active Context
 
-The previous agent-specific implementation has been pruned. Treat the HTML
-specs as the active source of product context:
+Treat the HTML specs as the source of product context:
 
 - `specs/index.html`
 - `specs/prd-simplified-afk.html`
 - `specs/design-principles.html`
+- `specs/architecture.html`
+- `specs/coding-testing-standards.html`
 
-Do not infer requirements from deleted history, old releases, or obsolete
-agent/prompt/harness workflows.
+Do not infer requirements beyond the active specs.
 
 ## Non-Interactive Shell Commands
 
