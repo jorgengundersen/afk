@@ -95,7 +95,7 @@
       <li>Support newline-delimited and JSON-array item formats.</li>
       <li>Sleep when a dynamic item source has no items.</li>
       <li>Apply simple exit-code policies.</li>
-      <li>Support a per-iteration timeout so unattended loops cannot hang forever.</li>
+      <li>Support a per-command-invocation timeout for main child commands and item-source commands so unattended loops cannot hang forever.</li>
     </ul>
   </section>
 
@@ -116,6 +116,17 @@
   <section>
     <h2>4. CLI</h2>
     <pre><code>afk [flags] -- command [args...]</code></pre>
+
+    <ul>
+      <li>The command separator <code>--</code> is required.</li>
+      <li>Arguments before <code>--</code> are <code>afk</code> flags.</li>
+      <li>Arguments after <code>--</code> are the child command and its arguments.</li>
+      <li><code>afk</code> never parses, removes, or rewrites arguments after <code>--</code>.</li>
+      <li>Unknown <code>afk</code> flags exit <code>2</code>.</li>
+      <li>Missing child command exits <code>2</code>.</li>
+      <li><code>-h</code> and <code>--help</code> print usage to stdout and exit <code>0</code>.</li>
+      <li>Help output is the only v1 <code>afk</code> control output intentionally written to stdout.</li>
+    </ul>
 
     <table>
       <thead>
@@ -168,7 +179,7 @@
           <td><code>--until-success</code></td>
           <td>boolean</td>
           <td>false</td>
-          <td>Retry until the command exits 0, then stop. Mutually exclusive with <code>--fail stop</code>.</td>
+          <td>Failure policy: retry until the command exits 0, then stop. Requires <code>--loops</code> or <code>--daemon</code>. Mutually exclusive with <code>--fail stop</code>. Invalid with item sources in v1.</td>
         </tr>
         <tr>
           <td><code>--timeout</code></td>
@@ -205,7 +216,7 @@
     </p>
     <pre><code>afk -d --items-cmd "bd ready --json" --sleep 5m -- ./worker</code></pre>
 
-    <p>Recommended behavior:</p>
+    <p>V1 behavior:</p>
     <ul>
       <li>Run <code>--items-cmd</code>.</li>
       <li>If it returns items, process the batch one item at a time.</li>
@@ -213,6 +224,7 @@
       <li>In daemon mode, when the batch is exhausted, run <code>--items-cmd</code> again.</li>
       <li>If it returns no items in daemon mode, sleep and retry forever.</li>
       <li>If it returns no items in non-daemon mode, sleep and retry while <code>--empty-sleeps</code> quota remains, then exit 0 if no items were found.</li>
+      <li>Sleep retries do not increment <code>AFK_INDEX</code>.</li>
     </ul>
   </section>
 
@@ -227,6 +239,7 @@
       <li>String elements become their string value.</li>
       <li>Number, boolean, object, array, and null elements become compact JSON in <code>AFK_ITEM</code>.</li>
       <li>An empty array means no items.</li>
+      <li>If item source output is valid JSON but the top-level value is not an array, parse it as newline-delimited text.</li>
     </ul>
 
     <h3>6.2 Newline-delimited text</h3>
@@ -241,7 +254,15 @@
       <li>Non-blank line content is preserved exactly except for line-ending removal.</li>
     </ul>
 
-    <h3>6.3 Source exclusivity</h3>
+    <h3>6.3 Empty item sources</h3>
+    <ul>
+      <li><code>--items ""</code> means no items and exits <code>0</code>.</li>
+      <li>Whitespace-only newline text means no non-blank items and exits <code>0</code>.</li>
+      <li><code>--items "[]"</code> means no items and exits <code>0</code>.</li>
+      <li>Static item sources never sleep.</li>
+    </ul>
+
+    <h3>6.4 Source exclusivity</h3>
     <p>Only one item source may be set:</p>
     <ul>
       <li><code>--items</code></li>
@@ -288,7 +309,9 @@
       <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code>.
       In non-item loops, inherited <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and
       <code>AFK_ITEM_COUNT</code> are removed so stale item context cannot leak into the child.
-      <code>--items-cmd</code> receives the parent environment except these <code>AFK_*</code> loop-context variables are removed.
+      <code>--items-cmd</code> receives the parent environment except <code>AFK_INDEX</code>,
+      <code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code>
+      are removed; it gets no loop context because it runs before the next main child invocation exists.
     </p>
 
     <pre><code>afk --items '["apple","banana"]' -- sh -c 'echo "$AFK_INDEX $AFK_ITEM_INDEX/$AFK_ITEM_COUNT $AFK_ITEM"'</code></pre>
@@ -332,7 +355,7 @@
       <tbody>
         <tr>
           <td><code>--fail continue</code></td>
-          <td>Non-zero exits are reported, but the loop continues.</td>
+          <td>Non-zero exits are treated as loop input, but the loop continues.</td>
           <td><code>afk -n 20 --fail continue -- ./agent</code></td>
         </tr>
         <tr>
@@ -348,14 +371,34 @@
       </tbody>
     </table>
 
-    <p>Recommended final exit behavior:</p>
+    <p>V1 final exit behavior:</p>
     <ul>
       <li><code>--fail continue</code>: exit 0 after completing the requested loop work, unless an internal/source error occurs.</li>
       <li><code>--fail stop</code>: exit with the first non-zero child exit code.</li>
       <li><code>--until-success</code>: exit 0 on first successful child exit; if fixed attempts are exhausted, exit with the last non-zero child exit code, or 1. For v1, this policy is valid only with <code>--loops</code> or <code>--daemon</code>, not item sources.</li>
       <li>Interrupted by signal: exit 130.</li>
-      <li>Internal error, invalid config, source command failure, or timeout handling failure: exit 1 or 2 as appropriate.</li>
+      <li>Invalid usage/configuration: exit 2.</li>
+      <li>Internal error, source command failure, or timeout-management failure: exit 1.</li>
     </ul>
+
+    <h3>9.1 Exit code mapping</h3>
+    <table>
+      <thead><tr><th>Case</th><th>Exit behavior</th></tr></thead>
+      <tbody>
+        <tr><td>Main child exits normally</td><td>Use the child exit code as loop input.</td></tr>
+        <tr><td>Main child is killed by signal</td><td>Treat as exit code <code>128 + signal</code>.</td></tr>
+        <tr><td>Main child command is not found</td><td>Treat as synthetic child exit code <code>127</code> and apply the selected failure policy.</td></tr>
+        <tr><td>Main child command cannot be executed because of permissions or executable format</td><td>Treat as synthetic child exit code <code>126</code> and apply the selected failure policy.</td></tr>
+        <tr><td>Main child times out</td><td>Treat as synthetic child exit code <code>124</code>.</td></tr>
+        <tr><td><code>--items-cmd</code> times out</td><td>Treat as source error and exit <code>1</code>.</td></tr>
+        <tr><td><code>--fail continue</code></td><td>Continue after child failures and exit <code>0</code> after requested work completes.</td></tr>
+        <tr><td><code>--fail stop</code></td><td>Stop on first non-zero child failure and exit with that child code.</td></tr>
+        <tr><td><code>--until-success</code> with exhausted fixed attempts</td><td>Exit with the last non-zero child code, or <code>1</code> if none is available.</td></tr>
+        <tr><td>Timeout under <code>--fail stop</code></td><td>Exit <code>124</code>.</td></tr>
+        <tr><td>Timeout under <code>--fail continue</code></td><td>Continue; final successful completion exits <code>0</code>.</td></tr>
+        <tr><td>Timeout under <code>--until-success</code></td><td>Continue until success or attempts are exhausted; exhausted attempts exit <code>124</code> if it was the last failure.</td></tr>
+      </tbody>
+    </table>
   </section>
 
   <section>
@@ -390,18 +433,27 @@
 
   <section>
     <h2>12. Signals and Process Management</h2>
+    <p>
+      Every spawned command runs in its own Unix process group. On interrupt or timeout,
+      <code>afk</code> signals the whole process group it created, not only the immediate child.
+    </p>
     <ul>
-      <li>On first interrupt, stop scheduling new iterations.</li>
-      <li>If a child command is running, terminate the child process group.</li>
-      <li>After a short grace period, kill the child process group if needed.</li>
-      <li>Exit with code 130 on user interrupt.</li>
+      <li>On first <code>SIGINT</code>, mark <code>afk</code> as interrupted, stop scheduling new iterations, and wake any active <code>--sleep</code> immediately.</li>
+      <li>If a main command or <code>--items-cmd</code> is running, send <code>SIGINT</code> to its process group.</li>
+      <li>Wait up to <code>5s</code>, then send <code>SIGTERM</code> to the process group if still running.</li>
+      <li>Wait up to <code>2s</code>, then send <code>SIGKILL</code> to the process group if still running.</li>
+      <li>If another <code>SIGINT</code> arrives during graceful shutdown, immediately send <code>SIGKILL</code> to the current process group and exit <code>130</code>.</li>
+      <li>Always wait for the immediate child before returning.</li>
+      <li>Exit with code <code>130</code> on user interrupt.</li>
     </ul>
   </section>
 
   <section>
     <h2>13. Validation Rules</h2>
     <ul>
+      <li>The command separator <code>--</code> is required.</li>
       <li>A command after <code>--</code> is required.</li>
+      <li>Unknown <code>afk</code> flags exit <code>2</code>.</li>
       <li>At least one loop driver is required: <code>--loops</code>, <code>--daemon</code>, <code>--items</code>, or <code>--items-cmd</code>.</li>
       <li><code>--loops</code> must be a positive integer.</li>
       <li><code>--loops</code> and <code>--daemon</code> are mutually exclusive.</li>
@@ -415,6 +467,7 @@
       <li><code>--until-success</code> is mutually exclusive with <code>--fail stop</code>.</li>
       <li><code>--until-success</code> requires <code>--loops</code> or <code>--daemon</code> and is invalid with item sources in v1.</li>
       <li><code>--timeout</code>, when set, must be positive.</li>
+      <li>All invalid combinations exit <code>2</code>.</li>
     </ul>
   </section>
 
@@ -472,7 +525,8 @@
       <li><code>AFK_ITEM</code>, <code>AFK_ITEM_INDEX</code>, and <code>AFK_ITEM_COUNT</code> are set for item-driven invocations.</li>
       <li><code>--fail stop</code> stops on the first non-zero child exit.</li>
       <li><code>--until-success</code> stops on the first zero child exit.</li>
-      <li><code>--timeout</code> terminates a hung child process and applies failure policy.</li>
+      <li><code>--timeout</code> terminates a hung main child process group and applies failure policy.</li>
+      <li><code>--timeout</code> terminates a hung <code>--items-cmd</code> process group and exits <code>1</code>.</li>
       <li>Main child stdout/stderr are passed through without parsing or transformation.</li>
       <li>Ctrl+C terminates the current child process group and exits 130.</li>
     </ul>
@@ -489,6 +543,7 @@
       <li>File logging.</li>
       <li>Config files.</li>
       <li>Parallel execution.</li>
+      <li><code>--version</code>.</li>
     </ul>
   </section>
 </main>

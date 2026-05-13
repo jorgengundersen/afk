@@ -146,6 +146,8 @@ type Runner interface {
   <h2>7. Testing Standards</h2>
   <ul>
     <li>Use Go's standard <code>testing</code> package.</li>
+    <li>Project-wide test command: <code>go test ./...</code>.</li>
+    <li>Build command for black-box CLI tests and manual checks: <code>go build ./cmd/afk</code>.</li>
     <li>Prefer black-box CLI tests for product behavior.</li>
     <li>Unit-test pure functions: validation, durations, item parsing, env construction, exit policy.</li>
     <li>Do not test implementation details that are not contract.</li>
@@ -155,7 +157,7 @@ type Runner interface {
     <li>Use short timeouts and contexts around subprocess tests to prevent hangs.</li>
     <li>Signal and timeout tests may use tiny helper shell commands and only need to work on Linux/macOS.</li>
     <li>Interrupt tests should prove graceful shutdown, hard second interrupt, interruptible sleep, and process-group cleanup.</li>
-    <li>Assert stdout exactly when testing child output passthrough.</li>
+    <li>Assert stdout exactly when testing child output passthrough and help output.</li>
     <li>Assert stderr only for required errors or broad required behavior.</li>
   </ul>
 
@@ -193,18 +195,24 @@ if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
     <li><code>--fail continue</code>, <code>--fail stop</code>, and <code>--until-success</code> produce documented exit behavior.</li>
     <li><code>--timeout</code> terminates a hung main child process group and applies failure policy.</li>
     <li><code>--timeout</code> terminates a hung <code>--items-cmd</code> process group and exits <code>1</code>.</li>
-    <li>Invalid flag combinations exit <code>2</code>.</li>
+    <li>The command separator <code>--</code> is required.</li>
+    <li>Unknown flags, missing child command, and invalid flag combinations exit <code>2</code>.</li>
+    <li><code>-h</code> and <code>--help</code> print usage to stdout and exit <code>0</code>.</li>
     <li>Source command failure exits <code>1</code>.</li>
+    <li>Main child not-found and cannot-execute start failures map to synthetic child codes <code>127</code> and <code>126</code>, then follow failure policy.</li>
     <li>Ctrl+C during a child sends graceful interrupt and exits <code>130</code>.</li>
     <li>A second Ctrl+C hard-kills the active child process group and exits <code>130</code>.</li>
     <li>Ctrl+C during empty-source sleep wakes immediately and exits <code>130</code>.</li>
     <li>Grandchildren that remain in the child process group are cleaned up.</li>
     <li>A running <code>--items-cmd</code> is also killed as a process group on interrupt.</li>
+    <li><code>--items-cmd</code> does not inherit stale <code>AFK_*</code> loop-context variables.</li>
+    <li>Non-item main child invocations remove stale item context variables.</li>
   </ul>
 
   <h2>10. Done Criteria</h2>
   <ul>
     <li><code>gofmt</code> applied.</li>
+    <li><code>go build ./cmd/afk</code> succeeds.</li>
     <li><code>go test ./...</code> passes.</li>
     <li>Behavior matches the PRD and architecture specs.</li>
     <li>No removed-scope concepts were introduced.</li>

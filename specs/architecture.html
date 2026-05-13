@@ -39,7 +39,15 @@
     execution, signal handling, or process-group behavior.
   </p>
 
-  <h2>3. Initial Repository Shape</h2>
+  <h2>3. Build and Toolchain</h2>
+  <ul>
+    <li>Use Go modules.</li>
+    <li>Use a current stable Go version; set <code>go.mod</code> to Go <code>1.22</code> or newer.</li>
+    <li>Build command: <code>go build ./cmd/afk</code>.</li>
+    <li>Test command: <code>go test ./...</code>.</li>
+  </ul>
+
+  <h2>4. Initial Repository Shape</h2>
   <pre><code>go.mod
 cmd/afk/main.go
 internal/afk/config.go      // flags, config, validation
@@ -54,10 +62,12 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     real boundary earns the cost.
   </p>
 
-  <h2>4. Main Flow</h2>
+  <h2>5. Main Flow</h2>
   <ol>
     <li><code>main</code> calls an internal entrypoint and exits with its code.</li>
+    <li>Require the command separator <code>--</code>.</li>
     <li>Parse arguments before <code>--</code> as <code>afk</code> flags.</li>
+    <li>Treat arguments after <code>--</code> as the child command and its arguments; never parse, remove, or rewrite them.</li>
     <li>Require the command after <code>--</code>; execute it exactly as provided.</li>
     <li>Validate the full config before running anything.</li>
     <li>Install interrupt handling.</li>
@@ -65,7 +75,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>Map child exits, source errors, timeouts, and interrupts to final exit codes.</li>
   </ol>
 
-  <h2>5. Core Types</h2>
+  <h2>6. Core Types</h2>
   <table>
     <thead><tr><th>Type</th><th>Purpose</th></tr></thead>
     <tbody>
@@ -81,7 +91,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     frameworks, global mutable state, and hidden defaults.
   </p>
 
-  <h2>6. Pure Logic</h2>
+  <h2>7. Pure Logic</h2>
   <p>These functions should be easy to unit test without processes or sleeps:</p>
   <ul>
     <li>flag/config validation</li>
@@ -91,7 +101,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>failure-policy and final-exit decisions</li>
   </ul>
 
-  <h2>7. External Boundaries</h2>
+  <h2>8. External Boundaries</h2>
   <ul>
     <li>Use <code>os/exec</code> for processes.</li>
     <li>The command after <code>--</code> is executed directly, not through a shell.</li>
@@ -104,7 +114,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>Use timers from <code>time</code> and signals from <code>os/signal</code>.</li>
   </ul>
 
-  <h2>8. Process and Interrupt Management</h2>
+  <h2>9. Process and Interrupt Management</h2>
   <p>
     Every spawned command runs in its own Unix process group. This includes the
     main command after <code>--</code> and <code>--items-cmd</code>. Use Go's
@@ -112,7 +122,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <code>syscall.SysProcAttr{Setpgid: true}</code>.
   </p>
 
-  <h3>8.1 Cleanup Guarantee</h3>
+  <h3>9.1 Cleanup Guarantee</h3>
   <p>
     On interrupt or timeout, <code>afk</code> signals the whole process group it
     created, not only the immediate child. It must call <code>Wait</code> for the
@@ -128,7 +138,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     is optimized for unattended commands.
   </p>
 
-  <h3>8.2 First Interrupt: Graceful Shutdown</h3>
+  <h3>9.2 First Interrupt: Graceful Shutdown</h3>
   <p>On first <code>SIGINT</code>:</p>
   <ol>
     <li>Mark <code>afk</code> as interrupted.</li>
@@ -142,7 +152,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>Wait for the immediate child and exit <code>130</code>.</li>
   </ol>
 
-  <h3>8.3 Second Interrupt: Hard Shutdown</h3>
+  <h3>9.3 Second Interrupt: Hard Shutdown</h3>
   <p>
     If another <code>SIGINT</code> arrives while graceful shutdown is in
     progress, immediately send <code>SIGKILL</code> to the current process group,
@@ -150,7 +160,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     wait through the graceful timers again.
   </p>
 
-  <h3>8.4 Timeout Shutdown</h3>
+  <h3>9.4 Timeout Shutdown</h3>
   <p>
     <code>--timeout</code> applies to every command process group started by
     <code>afk</code>: the main command after <code>--</code> and
@@ -164,13 +174,13 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <code>afk</code> source error and exits <code>1</code>.
   </p>
 
-  <h2>9. Sleep Contract</h2>
+  <h2>10. Sleep Contract</h2>
   <p>
     Sleeps must be interruptible. A Ctrl+C during <code>--sleep</code> exits
     promptly with <code>130</code>; it must not wait for the full sleep duration.
   </p>
 
-  <h2>10. Duration Contract</h2>
+  <h2>11. Duration Contract</h2>
   <p>
     Parse durations with Go's <code>time.ParseDuration</code>. Examples:
     <code>500ms</code>, <code>10s</code>, <code>5m</code>, <code>1h</code>.
@@ -178,7 +188,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     must be positive.
   </p>
 
-  <h2>11. Output Contract</h2>
+  <h2>12. Output Contract</h2>
   <p>
     <code>afk</code> never writes control output to stdout, except explicit help
     output. Stdout belongs to the child command. Routine per-iteration status is
@@ -186,7 +196,7 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     messages, and other required diagnostics go to stderr and should be minimal.
   </p>
 
-  <h2>12. Exit Codes</h2>
+  <h2>13. Exit Codes</h2>
   <ul>
     <li><code>0</code>: requested work completed successfully under the selected policy.</li>
     <li>child exit code: used when <code>--fail stop</code> stops on a child failure, or fixed <code>--until-success</code> attempts are exhausted.</li>
