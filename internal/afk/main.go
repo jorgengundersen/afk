@@ -14,13 +14,23 @@ Flags:
 func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = stdin
 
-	if wantsHelp(args) {
+	cfg, err := ParseArgs(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "usage error: %v\n", err)
+		return 2
+	}
+
+	if cfg.Help {
 		_, _ = io.WriteString(stdout, usageText)
 		return 0
 	}
 
-	fmt.Fprintln(stderr, "usage error: missing required -- separator")
-	return 2
+	if err := ValidateConfig(cfg); err != nil {
+		fmt.Fprintf(stderr, "usage error: %v\n", err)
+		return 2
+	}
+
+	return 0
 }
 
 func wantsHelp(args []string) bool {

@@ -25,9 +25,13 @@ type Config struct {
 	UntilSuccess bool
 	Timeout      time.Duration
 
+	LoopsExplicit       bool
+	ItemsExplicit       bool
+	ItemsCmdExplicit    bool
 	SleepExplicit       bool
 	EmptySleepsExplicit bool
 	FailExplicit        bool
+	TimeoutExplicit     bool
 
 	CommandArgv []string
 }
@@ -81,15 +85,101 @@ func ParseArgs(args []string) (Config, error) {
 
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "loops", "n":
+			cfg.LoopsExplicit = true
+		case "items":
+			cfg.ItemsExplicit = true
+		case "items-cmd":
+			cfg.ItemsCmdExplicit = true
 		case "sleep":
 			cfg.SleepExplicit = true
 		case "empty-sleeps":
 			cfg.EmptySleepsExplicit = true
 		case "fail":
 			cfg.FailExplicit = true
+		case "timeout":
+			cfg.TimeoutExplicit = true
 		}
 	})
 
 	cfg.CommandArgv = after
 	return cfg, nil
+}
+
+func ValidateConfig(cfg Config) error {
+	if len(cfg.CommandArgv) == 0 {
+		return errors.New("missing main child command after --")
+	}
+
+	hasItems := cfg.ItemsExplicit
+	hasItemsCmd := cfg.ItemsCmdExplicit
+	hasLoops := cfg.LoopsExplicit
+	hasDriver := hasLoops || cfg.Daemon || hasItems || hasItemsCmd
+	if !hasDriver {
+		return errors.New("at least one loop driver is required: --loops, --daemon, --items, or --items-cmd")
+	}
+
+	if hasLoops && cfg.Loops <= 0 {
+		return errors.New("--loops must be a positive integer")
+	}
+
+	if hasLoops && cfg.Daemon {
+		return errors.New("--loops and --daemon are mutually exclusive")
+	}
+	if hasLoops && (hasItems || hasItemsCmd) {
+		return errors.New("--loops and item sources are mutually exclusive")
+	}
+	if hasItems && hasItemsCmd {
+		return errors.New("--items and --items-cmd are mutually exclusive")
+	}
+	if cfg.Daemon && hasItems {
+		return errors.New("--daemon and --items are mutually exclusive")
+	}
+
+	if cfg.SleepExplicit {
+		if !hasItemsCmd {
+			return errors.New("explicit --sleep requires --items-cmd")
+		}
+		if cfg.Sleep < 0 {
+			return errors.New("--sleep must be non-negative")
+		}
+	}
+
+	if cfg.EmptySleepsExplicit {
+		if !hasItemsCmd {
+			return errors.New("explicit --empty-sleeps requires --items-cmd")
+		}
+		if cfg.EmptySleeps < 0 {
+			return errors.New("--empty-sleeps must be non-negative")
+		}
+	}
+
+	failValue := cfg.Fail
+	if failValue == "" {
+		failValue = "continue"
+	}
+	if failValue != "continue" && failValue != "stop" {
+		return errors.New("--fail must be continue or stop")
+	}
+
+	if cfg.UntilSuccess {
+		if cfg.FailExplicit {
+			return errors.New("--until-success is invalid with explicit --fail")
+		}
+		if hasItems || hasItemsCmd {
+			return errors.New("--until-success is invalid with item sources")
+		}
+		if !hasLoops && !cfg.Daemon {
+			return errors.New("--until-success requires --loops or --daemon")
+		}
+	}
+
+	if cfg.TimeoutExplicit && cfg.Timeout <= 0 {
+		return errors.New("--timeout must be positive when set")
+	}
+	if cfg.Timeout < 0 {
+		return errors.New("--timeout must be positive when set")
+	}
+
+	return nil
 }
