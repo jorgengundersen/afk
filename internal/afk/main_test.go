@@ -203,6 +203,50 @@ func TestMainItemsCmdDaemonRepollsAfterExhaustedNonEmptyBatches(t *testing.T) {
 	}
 }
 
+func TestMainItemsCmdDaemonSleepsAfterEmptyBatchBeforeRepoll(t *testing.T) {
+	tempDir := t.TempDir()
+	callsFile := tempDir + "/items-cmd-calls"
+	itemsCmd := fmt.Sprintf(
+		`n=0; if [ -f %q ]; then n=$(cat %q); fi; n=$((n+1)); printf "%%s\n" "$n" > %q; if [ "$n" -eq 2 ]; then printf "c\n"; fi`,
+		callsFile,
+		callsFile,
+		callsFile,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	startedAt := time.Now()
+	exitCode := Main(
+		[]string{"--daemon", "--items-cmd", itemsCmd, "--sleep", "150ms", "--fail", "stop", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; exit 7`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	elapsed := time.Since(startedAt)
+
+	if exitCode != 7 {
+		t.Fatalf("Main() exit code = %d, want 7", exitCode)
+	}
+	if stdout.String() != "1\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if elapsed < 120*time.Millisecond {
+		t.Fatalf("Main() elapsed = %v, want >= 120ms due to empty-batch daemon sleep", elapsed)
+	}
+
+	calls, err := os.ReadFile(callsFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if string(calls) != "2\n" {
+		t.Fatalf("items-cmd invocation count = %q, want %q", string(calls), "2\\n")
+	}
+}
+
 func TestMainItemsCmdStdoutIsCapturedAndStderrPassesThrough(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -163,6 +163,9 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 		}
 
 		if len(items) == 0 {
+			if cfg.Sleep > 0 {
+				time.Sleep(cfg.Sleep)
+			}
 			continue
 		}
 
