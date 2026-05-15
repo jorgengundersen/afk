@@ -1083,6 +1083,90 @@ func TestRunLoopSecondSigintHardKillsActiveProcessGroupAndExits130(t *testing.T)
 	}
 }
 
+func TestMainDefaultFailContinueStaticItemsCompletesAllItemsAfterNonZeroAndSignaledExits(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items", "a\nb\nc", "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"; if [ "$AFK_INDEX" -eq 1 ]; then exit 7; fi; kill -TERM $$`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "a\nb\nc\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\nb\\nc\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainFailStopStaticItemsStopsOnFirstNonZeroAndReturnsExitCode(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items", "a\nb", "--fail", "stop", "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"; if [ "$AFK_INDEX" -eq 1 ]; then kill -TERM $$; fi; exit 0`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 143 {
+		t.Fatalf("Main() exit code = %d, want 143", exitCode)
+	}
+	if stdout.String() != "a\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainDefaultFailContinueDynamicItemsCompletesBatchAfterNonZeroAndTimeout(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items-cmd", "printf 'a\\nb\\n'", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"; if [ "$AFK_INDEX" -eq 1 ]; then exit 9; fi; trap 'exit 0' TERM; while :; do sleep 1; done`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "a\nb\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\nb\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainFailStopDynamicItemsStopsOnTimeoutAndReturns124(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items-cmd", "printf 'a\\nb\\n'", "--fail", "stop", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"; trap 'exit 0' TERM; while :; do sleep 1; done`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.String() != "a\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainUsageErrorsExit2(t *testing.T) {
 	tests := []struct {
 		name string
