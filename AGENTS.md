@@ -33,3 +33,11 @@ Other commands that may prompt:
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1`
 
 Use conventional commits.
+
+## Beads Export Policy
+
+Treat `.beads/issues.jsonl` as a git-trackable export for planning/history, not the Beads source of truth.
+
+When planning changes or code changes materially update Beads issues, intentionally include `.beads/issues.jsonl` in the same commit.
+
+Do not rely on automatic staging for this file. Review the diff and `git add .beads/issues.jsonl` explicitly when its issue-state changes are part of the commit.
