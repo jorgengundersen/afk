@@ -1,6 +1,7 @@
 package afk
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,10 @@ func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	if cfg.ItemsExplicit {
 		return runStaticItemLoop(cfg, stdin, stdout, stderr)
+	}
+
+	if cfg.ItemsCmdExplicit && !cfg.Daemon {
+		return runNonDaemonDynamicItemLoop(cfg, stdout, stderr)
 	}
 
 	return 0
@@ -115,6 +120,49 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 	}
 
 	return 0
+}
+
+func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
+	items, err := runItemsCommand(cfg.ItemsCmd, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "item source error: %v\n", err)
+		return 1
+	}
+
+	for itemIndex, item := range items {
+		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
+		exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+		if err != nil {
+			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+				fmt.Fprintln(stderr, diagnostic)
+				return code
+			}
+			fmt.Fprintf(stderr, "execution error: %v\n", err)
+			return 1
+		}
+
+		if exitCode != 0 && cfg.Fail == "stop" {
+			return exitCode
+		}
+	}
+
+	return 0
+}
+
+func runItemsCommand(itemsCmd string, stderr io.Writer) ([]string, error) {
+	cmd := exec.Command("/bin/sh", "-c", itemsCmd)
+	cmd.Env = baseEnvWithoutAFKContext(os.Environ())
+	cmd.Stdin = bytes.NewReader(nil)
+	cmd.Stderr = stderr
+
+	var capturedStdout bytes.Buffer
+	cmd.Stdout = &capturedStdout
+
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	return ParseStaticItems(capturedStdout.String())
 }
 
 func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env []string, timeout time.Duration) (int, error) {

@@ -148,6 +148,80 @@ func TestMainStaticEmptyItemSourcesSkipMainChildAndExitZero(t *testing.T) {
 	}
 }
 
+func TestMainItemsCmdNonDaemonProcessesFirstNonEmptyBatchAndExitsZero(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--items-cmd", "printf 'a\\nb\\n'", "--", "sh", "-c", `echo "$AFK_INDEX $AFK_ITEM_INDEX/$AFK_ITEM_COUNT $AFK_ITEM"`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1 0/2 a\n2 1/2 b\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1 0/2 a\\n2 1/2 b\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainItemsCmdStdoutIsCapturedAndStderrPassesThrough(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--items-cmd", "printf 'item-from-source\\n'; printf 'source-stderr\\n' >&2", "--", "sh", "-c", `printf "main:%s\n" "$AFK_ITEM"`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "main:item-from-source\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "main:item-from-source\\n")
+	}
+	if stderr.String() != "source-stderr\n" {
+		t.Fatalf("Main() stderr = %q, want %q", stderr.String(), "source-stderr\\n")
+	}
+}
+
+func TestMainItemsCmdDoesNotInheritLoopContextEnv(t *testing.T) {
+	t.Setenv("AFK_INDEX", "99")
+	t.Setenv("AFK_ITEM", "stale")
+	t.Setenv("AFK_ITEM_INDEX", "8")
+	t.Setenv("AFK_ITEM_COUNT", "9")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--items-cmd", `printf "%s|%s|%s|%s\n" "${AFK_INDEX-unset}" "${AFK_ITEM-unset}" "${AFK_ITEM_INDEX-unset}" "${AFK_ITEM_COUNT-unset}"`, "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "unset|unset|unset|unset\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "unset|unset|unset|unset\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainItemsCmdDoesNotConsumeInheritedParentStdin(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items-cmd", `if IFS= read -r line; then printf "saw:%s\n" "$line"; else printf "empty\n"; fi`, "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"`},
+		strings.NewReader("from-parent-stdin\n"),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "empty\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "empty\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
