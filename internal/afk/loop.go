@@ -123,7 +123,7 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 }
 
 func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
-	items, err := runItemsCommand(cfg.ItemsCmd, stderr)
+	items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
 	if err != nil {
 		fmt.Fprintf(stderr, "item source error: %v\n", err)
 		return 1
@@ -149,20 +149,60 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runItemsCommand(itemsCmd string, stderr io.Writer) ([]string, error) {
+func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) ([]string, error) {
 	cmd := exec.Command("/bin/sh", "-c", itemsCmd)
 	cmd.Env = baseEnvWithoutAFKContext(os.Environ())
 	cmd.Stdin = bytes.NewReader(nil)
 	cmd.Stderr = stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var capturedStdout bytes.Buffer
 	cmd.Stdout = &capturedStdout
 
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 
-	return ParseStaticItems(capturedStdout.String())
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	if timeout <= 0 {
+		if err := <-waitCh; err != nil {
+			return nil, err
+		}
+		return ParseStaticItems(capturedStdout.String())
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-waitCh:
+		if err != nil {
+			return nil, err
+		}
+		return ParseStaticItems(capturedStdout.String())
+	case <-timer.C:
+		if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGTERM); err != nil {
+			return nil, fmt.Errorf("timeout cleanup failed: %w", err)
+		}
+
+		grace := time.NewTimer(2 * time.Second)
+		defer grace.Stop()
+
+		select {
+		case <-waitCh:
+			return nil, errors.New("source command timed out")
+		case <-grace.C:
+			if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil {
+				return nil, fmt.Errorf("timeout cleanup failed: %w", err)
+			}
+			<-waitCh
+			return nil, errors.New("source command timed out")
+		}
+	}
 }
 
 func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env []string, timeout time.Duration) (int, error) {

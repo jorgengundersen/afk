@@ -2,6 +2,7 @@ package afk
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -219,6 +220,39 @@ func TestMainItemsCmdDoesNotConsumeInheritedParentStdin(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainTimeoutItemsCmdKillsProcessGroupDiscardsCapturedStdoutAndExits1(t *testing.T) {
+	tempDir := t.TempDir()
+	terminatedFile := tempDir + "/items-cmd-term"
+
+	itemsCmd := fmt.Sprintf(
+		`printf "ghost-item\n"; trap '' TERM; (trap 'printf terminated > %s; exit 0' TERM; while :; do sleep 1; done) & while :; do sleep 1; done`,
+		terminatedFile,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	start := time.Now()
+	exitCode := Main([]string{"--items-cmd", itemsCmd, "--timeout", "100ms", "--", "sh", "-c", `printf "main:%s\n" "$AFK_ITEM"`}, nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+
+	if exitCode != 1 {
+		t.Fatalf("Main() exit code = %d, want 1", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty because timed-out items-cmd stdout must be discarded", stdout.String())
+	}
+	if _, err := os.Stat(terminatedFile); err != nil {
+		t.Fatalf("expected timed-out items-cmd process group to receive SIGTERM: %v", err)
+	}
+	if elapsed < 2*time.Second {
+		t.Fatalf("Main() returned too quickly for items-cmd SIGKILL timeout path: elapsed=%v, want >= 2s", elapsed)
+	}
+	if elapsed > 4*time.Second {
+		t.Fatalf("Main() took too long for items-cmd timeout path: elapsed=%v, want <= 4s", elapsed)
 	}
 }
 
