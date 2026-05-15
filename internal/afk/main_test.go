@@ -28,6 +28,79 @@ func TestMainHelp(t *testing.T) {
 	}
 }
 
+func TestMainRunsFixedLoopMainChildAndPreservesIOContract(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		stdin    string
+		setupEnv func(t *testing.T)
+		wantOut  string
+		wantErr  string
+		wantCode int
+	}{
+		{
+			name:     "sets AFK_INDEX for each fixed loop invocation",
+			args:     []string{"-n", "3", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"`},
+			wantOut:  "1\n2\n3\n",
+			wantCode: 0,
+		},
+		{
+			name:     "executes main child argv directly without shell expansion",
+			args:     []string{"-n", "1", "--", "printf", "%s\n", "$HOME"},
+			wantOut:  "$HOME\n",
+			wantCode: 0,
+		},
+		{
+			name:     "inherits parent stdin for main child invocation",
+			args:     []string{"-n", "1", "--", "sh", "-c", "cat"},
+			stdin:    "hello\n",
+			wantOut:  "hello\n",
+			wantCode: 0,
+		},
+		{
+			name:     "passes through main child stdout and stderr on original streams",
+			args:     []string{"-n", "1", "--", "sh", "-c", `printf "out\n"; printf "err\n" >&2`},
+			wantOut:  "out\n",
+			wantErr:  "err\n",
+			wantCode: 0,
+		},
+		{
+			name: "removes inherited AFK_ITEM context in non-item loops",
+			args: []string{"-n", "1", "--", "sh", "-c", `printf "%s|%s|%s\n" "${AFK_ITEM-unset}" "${AFK_ITEM_INDEX-unset}" "${AFK_ITEM_COUNT-unset}"`},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("AFK_ITEM", "stale")
+				t.Setenv("AFK_ITEM_INDEX", "9")
+				t.Setenv("AFK_ITEM_COUNT", "10")
+			},
+			wantOut:  "unset|unset|unset\n",
+			wantCode: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			stdin := strings.NewReader(tc.stdin)
+
+			exitCode := Main(tc.args, stdin, &stdout, &stderr)
+			if exitCode != tc.wantCode {
+				t.Fatalf("Main() exit code = %d, want %d", exitCode, tc.wantCode)
+			}
+			if stdout.String() != tc.wantOut {
+				t.Fatalf("Main() stdout = %q, want %q", stdout.String(), tc.wantOut)
+			}
+			if stderr.String() != tc.wantErr {
+				t.Fatalf("Main() stderr = %q, want %q", stderr.String(), tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestMainUsageErrorsExit2(t *testing.T) {
 	tests := []struct {
 		name string

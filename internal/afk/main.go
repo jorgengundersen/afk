@@ -12,8 +12,6 @@ Flags:
 `
 
 func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	_ = stdin
-
 	cfg, err := ParseArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "usage error: %v\n", err)
@@ -30,7 +28,7 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	return 0
+	return RunLoop(cfg, stdin, stdout, stderr)
 }
 
 func wantsHelp(args []string) bool {
