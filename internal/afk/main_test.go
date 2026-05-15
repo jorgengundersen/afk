@@ -808,10 +808,10 @@ func TestRunLoopInterruptDuringItemsCommandExits130AndDoesNotRunMainChild(t *tes
 	mainRunsFile := tempDir + "/main-runs"
 
 	cfg := Config{
-		Daemon:          true,
+		Daemon:           true,
 		ItemsCmdExplicit: true,
-		ItemsCmd:        fmt.Sprintf(`trap '' INT; trap '' TERM; (trap 'printf terminated > %s; exit 0' INT TERM; while :; do sleep 1; done) & while :; do sleep 1; done`, terminatedFile),
-		CommandArgv:     []string{"sh", "-c", fmt.Sprintf(`printf "ran\n" >> %s`, mainRunsFile)},
+		ItemsCmd:         fmt.Sprintf(`trap '' INT; trap '' TERM; (trap 'printf terminated > %s; exit 0' INT TERM; while :; do sleep 1; done) & while :; do sleep 1; done`, terminatedFile),
+		CommandArgv:      []string{"sh", "-c", fmt.Sprintf(`printf "ran\n" >> %s`, mainRunsFile)},
 	}
 
 	interrupts := make(chan os.Signal, 2)
@@ -875,6 +875,39 @@ func TestRunLoopFirstSigintStopsSchedulingNewDaemonIterations(t *testing.T) {
 	}
 	if got := strings.Count(string(runs), "run\n"); got != 1 {
 		t.Fatalf("main-child invocation count = %d, want 1", got)
+	}
+}
+
+func TestRunLoopSecondSigintHardKillsActiveProcessGroupAndExits130(t *testing.T) {
+	cfg := Config{
+		Daemon:      true,
+		CommandArgv: []string{"sh", "-c", `trap '' INT TERM; while :; do sleep 1; done`},
+	}
+
+	interrupts := make(chan os.Signal, 2)
+	resultCh := make(chan int, 1)
+
+	go func() {
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	started := time.Now()
+	interrupts <- syscall.SIGINT
+	time.Sleep(25 * time.Millisecond)
+	interrupts <- syscall.SIGINT
+
+	select {
+	case exitCode := <-resultCh:
+		elapsed := time.Since(started)
+		if exitCode != 130 {
+			t.Fatalf("runLoopWithInterrupts() exit code = %d, want 130", exitCode)
+		}
+		if elapsed > 1500*time.Millisecond {
+			t.Fatalf("runLoopWithInterrupts() elapsed after second SIGINT = %v, want <= 1500ms for hard shutdown", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("runLoopWithInterrupts() did not exit promptly after second SIGINT")
 	}
 }
 
