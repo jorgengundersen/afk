@@ -63,3 +63,39 @@ func TestParseStaticItems_ValidNonArrayJSONFallsBackToNewlineParsingOfOriginalIn
 		t.Fatalf("items = %#v, want %#v", items, want)
 	}
 }
+
+func TestParseStaticItems_NewlineParsingPreservesStandaloneCarriageReturnWithoutLineFeed(t *testing.T) {
+	items, err := ParseStaticItems("alpha\rbeta\r")
+	if err != nil {
+		t.Fatalf("ParseStaticItems() error = %v", err)
+	}
+
+	want := []string{"alpha\rbeta\r"}
+	if !reflect.DeepEqual(items, want) {
+		t.Fatalf("items = %#v, want %#v", items, want)
+	}
+}
+
+func TestParseStaticItems_NewlineParsingRemovesOnlyTheCRFromCRLFLineEndings(t *testing.T) {
+	items, err := ParseStaticItems("a\r\nb\r\r\nc\n")
+	if err != nil {
+		t.Fatalf("ParseStaticItems() error = %v", err)
+	}
+
+	want := []string{"a", "b\r", "c"}
+	if !reflect.DeepEqual(items, want) {
+		t.Fatalf("items = %#v, want %#v", items, want)
+	}
+}
+
+func TestParseStaticItems_NewlineParsingIgnoresBlankUnicodeWhitespaceLines(t *testing.T) {
+	items, err := ParseStaticItems("\n\t\n\u2003\n keep \n")
+	if err != nil {
+		t.Fatalf("ParseStaticItems() error = %v", err)
+	}
+
+	want := []string{" keep "}
+	if !reflect.DeepEqual(items, want) {
+		t.Fatalf("items = %#v, want %#v", items, want)
+	}
+}

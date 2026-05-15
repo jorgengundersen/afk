@@ -45,8 +45,8 @@ func parseJSONArrayItems(array []any) ([]string, error) {
 func parseNewlineItems(input string) []string {
 	lines := strings.Split(input, "\n")
 	items := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasSuffix(line, "\r") {
+	for i, line := range lines {
+		if i < len(lines)-1 && strings.HasSuffix(line, "\r") {
 			line = strings.TrimSuffix(line, "\r")
 		}
 		if strings.TrimSpace(line) == "" {
