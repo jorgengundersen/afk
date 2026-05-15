@@ -126,30 +126,47 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 }
 
 func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
-	items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
-	if err != nil {
-		fmt.Fprintf(stderr, "item source error: %v\n", err)
-		return 1
-	}
+	invocationIndex := 1
+	remainingEmptySleeps := cfg.EmptySleeps
 
-	for itemIndex, item := range items {
-		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
-		exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+	for {
+		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
 		if err != nil {
-			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-				fmt.Fprintln(stderr, diagnostic)
-				return code
-			}
-			fmt.Fprintf(stderr, "execution error: %v\n", err)
+			fmt.Fprintf(stderr, "item source error: %v\n", err)
 			return 1
 		}
 
-		if exitCode != 0 && cfg.Fail == "stop" {
-			return exitCode
+		if len(items) == 0 {
+			if remainingEmptySleeps <= 0 {
+				return 0
+			}
+			remainingEmptySleeps--
+			if cfg.Sleep > 0 {
+				time.Sleep(cfg.Sleep)
+			}
+			continue
 		}
-	}
 
-	return 0
+		for itemIndex, item := range items {
+			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
+			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+			if err != nil {
+				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+					fmt.Fprintln(stderr, diagnostic)
+					return code
+				}
+				fmt.Fprintf(stderr, "execution error: %v\n", err)
+				return 1
+			}
+
+			if exitCode != 0 && cfg.Fail == "stop" {
+				return exitCode
+			}
+			invocationIndex++
+		}
+
+		return 0
+	}
 }
 
 func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
