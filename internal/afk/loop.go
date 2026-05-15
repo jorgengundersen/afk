@@ -142,7 +142,9 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 			}
 			remainingEmptySleeps--
 			if cfg.Sleep > 0 {
-				time.Sleep(cfg.Sleep)
+				if interruptibleSleep(cfg.Sleep, nil) {
+					return 130
+				}
 			}
 			continue
 		}
@@ -181,7 +183,9 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 
 		if len(items) == 0 {
 			if cfg.Sleep > 0 {
-				time.Sleep(cfg.Sleep)
+				if interruptibleSleep(cfg.Sleep, nil) {
+					return 130
+				}
 			}
 			continue
 		}
