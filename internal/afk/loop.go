@@ -26,6 +26,10 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	for i := 1; i <= cfg.Loops; i++ {
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, i, cfg.Timeout)
 		if err != nil {
+			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+				fmt.Fprintln(stderr, diagnostic)
+				return code
+			}
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
 		}
@@ -41,6 +45,10 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	for i := 1; ; i++ {
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, i, cfg.Timeout)
 		if err != nil {
+			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+				fmt.Fprintln(stderr, diagnostic)
+				return code
+			}
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
 		}
@@ -112,6 +120,28 @@ func mapMainChildWaitResult(err error) (int, error) {
 	}
 
 	return 0, err
+}
+
+func classifyMainChildStartFailure(command string, err error) (int, string, bool) {
+	if errors.Is(err, exec.ErrNotFound) {
+		return 127, fmt.Sprintf("command not found: %s", command), true
+	}
+
+	if errors.Is(err, os.ErrPermission) {
+		return 126, fmt.Sprintf("cannot execute: %s", command), true
+	}
+
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		if errno, ok := pathErr.Err.(syscall.Errno); ok {
+			switch errno {
+			case syscall.EACCES, syscall.ENOEXEC:
+				return 126, fmt.Sprintf("cannot execute: %s", command), true
+			}
+		}
+	}
+
+	return 0, "", false
 }
 
 func signalProcessGroup(pid int, sig syscall.Signal) error {

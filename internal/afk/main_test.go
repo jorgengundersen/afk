@@ -2,6 +2,7 @@ package afk
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -147,6 +148,50 @@ func TestMainFailStopMapsSignaledMainChildTo128PlusSignal(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainMissingMainChildCommandExits127Immediately(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--fail", "continue", "--", "definitely-not-a-real-command-afk"}, nil, &stdout, &stderr)
+	if exitCode != 127 {
+		t.Fatalf("Main() exit code = %d, want 127", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("Main() wrote empty stderr for missing command")
+	}
+	if strings.Count(strings.TrimSpace(stderr.String()), "\n") != 0 {
+		t.Fatalf("Main() stderr = %q, want single-line diagnostic", stderr.String())
+	}
+}
+
+func TestMainNonExecutableMainChildExits126Immediately(t *testing.T) {
+	tempDir := t.TempDir()
+	path := tempDir + "/not-executable.sh"
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho should-not-run\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--fail", "continue", "--", path}, nil, &stdout, &stderr)
+	if exitCode != 126 {
+		t.Fatalf("Main() exit code = %d, want 126", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("Main() wrote empty stderr for non-executable command")
+	}
+	if strings.Count(strings.TrimSpace(stderr.String()), "\n") != 0 {
+		t.Fatalf("Main() stderr = %q, want single-line diagnostic", stderr.String())
 	}
 }
 
