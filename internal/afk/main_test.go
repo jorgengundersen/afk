@@ -101,6 +101,54 @@ func TestMainRunsFixedLoopMainChildAndPreservesIOContract(t *testing.T) {
 	}
 }
 
+func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--fail", "stop", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; exit 7`}, nil, &stdout, &stderr)
+	if exitCode != 7 {
+		t.Fatalf("Main() exit code = %d, want 7", exitCode)
+	}
+	if stdout.String() != "1\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainFailStopDaemonStopsAtFirstNonZeroExit(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--daemon", "--fail", "stop", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; exit 9`}, nil, &stdout, &stderr)
+	if exitCode != 9 {
+		t.Fatalf("Main() exit code = %d, want 9", exitCode)
+	}
+	if stdout.String() != "1\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainFailStopMapsSignaledMainChildTo128PlusSignal(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--fail", "stop", "--", "sh", "-c", "kill -TERM $$"}, nil, &stdout, &stderr)
+	if exitCode != 143 {
+		t.Fatalf("Main() exit code = %d, want 143", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainUsageErrorsExit2(t *testing.T) {
 	tests := []struct {
 		name string
