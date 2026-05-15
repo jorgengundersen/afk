@@ -227,6 +227,7 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) (
 
 	if timeout <= 0 {
 		if err := <-waitCh; err != nil {
+			capturedStdout.Reset()
 			return nil, err
 		}
 		return ParseStaticItems(capturedStdout.String())
@@ -238,6 +239,7 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) (
 	select {
 	case err := <-waitCh:
 		if err != nil {
+			capturedStdout.Reset()
 			return nil, err
 		}
 		return ParseStaticItems(capturedStdout.String())
@@ -251,12 +253,14 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) (
 
 		select {
 		case <-waitCh:
+			capturedStdout.Reset()
 			return nil, errors.New("source command timed out")
 		case <-grace.C:
 			if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil {
 				return nil, fmt.Errorf("timeout cleanup failed: %w", err)
 			}
 			<-waitCh
+			capturedStdout.Reset()
 			return nil, errors.New("source command timed out")
 		}
 	}

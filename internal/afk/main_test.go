@@ -437,6 +437,30 @@ func TestMainItemsCmdDoesNotConsumeInheritedParentStdin(t *testing.T) {
 	}
 }
 
+func TestMainItemsCmdNonZeroExitDiscardsCapturedStdoutAndExits1(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items-cmd", `printf "ghost-item\n"; printf "source-stderr\n" >&2; exit 3`, "--", "sh", "-c", `printf "main:%s\n" "$AFK_ITEM"`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 1 {
+		t.Fatalf("Main() exit code = %d, want 1", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty because non-zero items-cmd stdout must be discarded", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "source-stderr\n") {
+		t.Fatalf("Main() stderr = %q, want source stderr passthrough", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "item source error: exit status 3\n") {
+		t.Fatalf("Main() stderr = %q, want source error diagnostic", stderr.String())
+	}
+}
+
 func TestMainTimeoutItemsCmdKillsProcessGroupDiscardsCapturedStdoutAndExits1(t *testing.T) {
 	tempDir := t.TempDir()
 	terminatedFile := tempDir + "/items-cmd-term"
