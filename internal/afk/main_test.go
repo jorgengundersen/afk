@@ -495,6 +495,94 @@ func TestMainTimeoutItemsCmdKillsProcessGroupDiscardsCapturedStdoutAndExits1(t *
 	}
 }
 
+func TestMainDefaultFailContinueFixedLoopsCompletesAfterNonZeroExitsAndReturnsZero(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; exit 7`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n3\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n3\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainDefaultFailContinueFixedLoopsTreatsSignaledMainChildAsFailureAndContinues(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "2", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; kill -INT $$`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunLoopDefaultFailContinueDaemonKeepsRerunningSignaledMainChildUntilInterrupted(t *testing.T) {
+	tempDir := t.TempDir()
+	iterationsFile := tempDir + "/iterations.txt"
+	cmd := fmt.Sprintf(`printf "%%s\\n" "$AFK_INDEX" >> "%s"; kill -INT $$`, iterationsFile)
+
+	cfg, err := ParseArgs([]string{"--daemon", "--", "sh", "-c", cmd})
+	if err != nil {
+		t.Fatalf("ParseArgs() error = %v", err)
+	}
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+
+	interrupts := make(chan os.Signal, 1)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- runLoopWithInterrupts(cfg, nil, &stdout, &stderr, interrupts)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		data, readErr := os.ReadFile(iterationsFile)
+		if readErr == nil && strings.HasPrefix(string(data), "1\n2\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			interrupts <- syscall.SIGINT
+			select {
+			case <-done:
+			case <-time.After(1 * time.Second):
+			}
+			t.Fatalf("daemon did not schedule a second invocation after signaled failure; file contents: %q", string(data))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	interrupts <- syscall.SIGINT
+	select {
+	case exitCode := <-done:
+		if exitCode != 130 {
+			t.Fatalf("runLoopWithInterrupts() exit code = %d, want 130", exitCode)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runLoopWithInterrupts() did not exit after interrupt")
+	}
+
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
