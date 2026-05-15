@@ -12,6 +12,8 @@ profile.cov
 
 # Scratch space
 tmp/
+# Project analysis run workspace (explicit for clarity)
+tmp/project-analysis/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

@@ -10,6 +10,15 @@
 - [Architecture](specs/architecture.html)
 - [Coding and Testing Standards](specs/coding-testing-standards.html)
 
+## Project analysis workflow assets
+
+Tracked analysis assets:
+- Prompt: `docs/project-analysis/PROJECT-ANALYSIS.md`
+- Artifact contract: `docs/project-analysis/PROJECT-ANALYSIS-ARTIFACTS.md`
+
+Run-scoped exploratory outputs belong under `tmp/project-analysis/<run-id>/`.
+That workspace is intentionally temporary and gitignored.
+
 ## Status
 
 Implementation pending.
