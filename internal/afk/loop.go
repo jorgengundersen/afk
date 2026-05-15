@@ -7,39 +7,57 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 )
 
+var errInterrupted = errors.New("interrupted")
+
 func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runLoopWithInterrupts(cfg, stdin, stdout, stderr, nil)
+}
+
+func runLoopWithInterrupts(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
+	if interrupts == nil {
+		sigCh := make(chan os.Signal, 2)
+		signal.Notify(sigCh, syscall.SIGINT)
+		defer signal.Stop(sigCh)
+		interrupts = sigCh
+	}
+
 	if cfg.LoopsExplicit {
-		return runFixedNonItemLoops(cfg, stdin, stdout, stderr)
+		return runFixedNonItemLoops(cfg, stdin, stdout, stderr, interrupts)
 	}
 
 	if cfg.Daemon && !cfg.ItemsExplicit && !cfg.ItemsCmdExplicit {
-		return runDaemonNonItemLoop(cfg, stdin, stdout, stderr)
+		return runDaemonNonItemLoop(cfg, stdin, stdout, stderr, interrupts)
 	}
 
 	if cfg.ItemsExplicit {
-		return runStaticItemLoop(cfg, stdin, stdout, stderr)
+		return runStaticItemLoop(cfg, stdin, stdout, stderr, interrupts)
 	}
 
 	if cfg.ItemsCmdExplicit {
 		if cfg.Daemon {
-			return runDaemonDynamicItemLoop(cfg, stdout, stderr)
+			return runDaemonDynamicItemLoop(cfg, stdout, stderr, interrupts)
 		}
-		return runNonDaemonDynamicItemLoop(cfg, stdout, stderr)
+		return runNonDaemonDynamicItemLoop(cfg, stdout, stderr, interrupts)
 	}
 
 	return 0
 }
 
-func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	lastNonZero := 0
 
 	for i := 1; i <= cfg.Loops; i++ {
+		if pendingSigint(interrupts) {
+			return 130
+		}
+
 		env := EnvForNonItemInvocation(os.Environ(), i)
-		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
 			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 				fmt.Fprintln(stderr, diagnostic)
@@ -47,6 +65,10 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 			}
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
+		}
+
+		if exitCode == 130 {
+			return 130
 		}
 
 		if cfg.UntilSuccess {
@@ -72,10 +94,14 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	return 0
 }
 
-func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	for i := 1; ; i++ {
+		if pendingSigint(interrupts) {
+			return 130
+		}
+
 		env := EnvForNonItemInvocation(os.Environ(), i)
-		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
 			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 				fmt.Fprintln(stderr, diagnostic)
@@ -83,6 +109,10 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 			}
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
+		}
+
+		if exitCode == 130 {
+			return 130
 		}
 
 		if cfg.UntilSuccess {
@@ -98,7 +128,7 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	}
 }
 
-func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	items, err := ParseStaticItems(cfg.Items)
 	if err != nil {
 		fmt.Fprintf(stderr, "item parse error: %v\n", err)
@@ -106,8 +136,12 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 	}
 
 	for itemIndex, item := range items {
+		if pendingSigint(interrupts) {
+			return 130
+		}
+
 		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
-		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
 			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 				fmt.Fprintln(stderr, diagnostic)
@@ -115,6 +149,10 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 			}
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
+		}
+
+		if exitCode == 130 {
+			return 130
 		}
 
 		if exitCode != 0 && cfg.Fail == "stop" {
@@ -125,13 +163,20 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) in
 	return 0
 }
 
-func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
+func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	invocationIndex := 1
 	remainingEmptySleeps := cfg.EmptySleeps
 
 	for {
-		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
+		if pendingSigint(interrupts) {
+			return 130
+		}
+
+		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout, interrupts)
 		if err != nil {
+			if errors.Is(err, errInterrupted) {
+				return 130
+			}
 			fmt.Fprintf(stderr, "item source error: %v\n", err)
 			return 1
 		}
@@ -142,7 +187,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 			}
 			remainingEmptySleeps--
 			if cfg.Sleep > 0 {
-				if interruptibleSleep(cfg.Sleep, nil) {
+				if interruptibleSleep(cfg.Sleep, interrupts) {
 					return 130
 				}
 			}
@@ -150,8 +195,12 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 		}
 
 		for itemIndex, item := range items {
+			if pendingSigint(interrupts) {
+				return 130
+			}
+
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
-			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
 				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 					fmt.Fprintln(stderr, diagnostic)
@@ -159,6 +208,10 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 				}
 				fmt.Fprintf(stderr, "execution error: %v\n", err)
 				return 1
+			}
+
+			if exitCode == 130 {
+				return 130
 			}
 
 			if exitCode != 0 && cfg.Fail == "stop" {
@@ -171,19 +224,26 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 	}
 }
 
-func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
+func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	invocationIndex := 1
 
 	for {
-		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
+		if pendingSigint(interrupts) {
+			return 130
+		}
+
+		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout, interrupts)
 		if err != nil {
+			if errors.Is(err, errInterrupted) {
+				return 130
+			}
 			fmt.Fprintf(stderr, "item source error: %v\n", err)
 			return 1
 		}
 
 		if len(items) == 0 {
 			if cfg.Sleep > 0 {
-				if interruptibleSleep(cfg.Sleep, nil) {
+				if interruptibleSleep(cfg.Sleep, interrupts) {
 					return 130
 				}
 			}
@@ -191,8 +251,12 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 		}
 
 		for itemIndex, item := range items {
+			if pendingSigint(interrupts) {
+				return 130
+			}
+
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
-			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
 				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 					fmt.Fprintln(stderr, diagnostic)
@@ -200,6 +264,10 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 				}
 				fmt.Fprintf(stderr, "execution error: %v\n", err)
 				return 1
+			}
+
+			if exitCode == 130 {
+				return 130
 			}
 
 			if exitCode != 0 && cfg.Fail == "stop" {
@@ -210,7 +278,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 	}
 }
 
-func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) ([]string, error) {
+func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, interrupts <-chan os.Signal) ([]string, error) {
 	cmd := exec.Command("/bin/sh", "-c", itemsCmd)
 	cmd.Env = baseEnvWithoutAFKContext(os.Environ())
 	cmd.Stdin = bytes.NewReader(nil)
@@ -229,48 +297,40 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) (
 		waitCh <- cmd.Wait()
 	}()
 
-	if timeout <= 0 {
-		if err := <-waitCh; err != nil {
-			capturedStdout.Reset()
-			return nil, err
-		}
-		return ParseStaticItems(capturedStdout.String())
+	var timeoutCh <-chan time.Time
+	var timer *time.Timer
+	if timeout > 0 {
+		timer = time.NewTimer(timeout)
+		timeoutCh = timer.C
+		defer timer.Stop()
 	}
 
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	select {
-	case err := <-waitCh:
-		if err != nil {
-			capturedStdout.Reset()
-			return nil, err
-		}
-		return ParseStaticItems(capturedStdout.String())
-	case <-timer.C:
-		if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGTERM); err != nil {
-			return nil, fmt.Errorf("timeout cleanup failed: %w", err)
-		}
-
-		grace := time.NewTimer(2 * time.Second)
-		defer grace.Stop()
-
+	for {
 		select {
-		case <-waitCh:
-			capturedStdout.Reset()
-			return nil, errors.New("source command timed out")
-		case <-grace.C:
-			if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil {
-				return nil, fmt.Errorf("timeout cleanup failed: %w", err)
+		case err := <-waitCh:
+			if err != nil {
+				capturedStdout.Reset()
+				return nil, err
 			}
-			<-waitCh
+			return ParseStaticItems(capturedStdout.String())
+		case <-timeoutCh:
+			if err := terminateProcessGroupOnTimeout(cmd.Process.Pid, waitCh); err != nil {
+				return nil, err
+			}
 			capturedStdout.Reset()
 			return nil, errors.New("source command timed out")
+		case sig := <-interrupts:
+			if !isSigint(sig) {
+				continue
+			}
+			gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			capturedStdout.Reset()
+			return nil, errInterrupted
 		}
 	}
 }
 
-func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env []string, timeout time.Duration) (int, error) {
+func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env []string, timeout time.Duration, interrupts <-chan os.Signal) (int, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
@@ -287,33 +347,29 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 		waitCh <- cmd.Wait()
 	}()
 
-	if timeout <= 0 {
-		return mapMainChildWaitResult(<-waitCh)
+	var timeoutCh <-chan time.Time
+	var timer *time.Timer
+	if timeout > 0 {
+		timer = time.NewTimer(timeout)
+		timeoutCh = timer.C
+		defer timer.Stop()
 	}
 
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	select {
-	case err := <-waitCh:
-		return mapMainChildWaitResult(err)
-	case <-timer.C:
-		if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGTERM); err != nil {
-			return 0, fmt.Errorf("timeout cleanup failed: %w", err)
-		}
-
-		grace := time.NewTimer(2 * time.Second)
-		defer grace.Stop()
-
+	for {
 		select {
-		case <-waitCh:
-			return 124, nil
-		case <-grace.C:
-			if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil {
-				return 0, fmt.Errorf("timeout cleanup failed: %w", err)
+		case err := <-waitCh:
+			return mapMainChildWaitResult(err)
+		case <-timeoutCh:
+			if err := terminateProcessGroupOnTimeout(cmd.Process.Pid, waitCh); err != nil {
+				return 0, err
 			}
-			<-waitCh
 			return 124, nil
+		case sig := <-interrupts:
+			if !isSigint(sig) {
+				continue
+			}
+			gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			return 130, nil
 		}
 	}
 }
@@ -365,4 +421,95 @@ func signalProcessGroup(pid int, sig syscall.Signal) error {
 		return nil
 	}
 	return err
+}
+
+func terminateProcessGroupOnTimeout(pid int, waitCh <-chan error) error {
+	if err := signalProcessGroup(pid, syscall.SIGTERM); err != nil {
+		return fmt.Errorf("timeout cleanup failed: %w", err)
+	}
+
+	grace := time.NewTimer(2 * time.Second)
+	defer grace.Stop()
+
+	select {
+	case <-waitCh:
+		return nil
+	case <-grace.C:
+		if err := signalProcessGroup(pid, syscall.SIGKILL); err != nil {
+			return fmt.Errorf("timeout cleanup failed: %w", err)
+		}
+		<-waitCh
+		return nil
+	}
+}
+
+func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan os.Signal) {
+	_ = signalProcessGroup(pid, syscall.SIGINT)
+
+	grace := time.NewTimer(5 * time.Second)
+	defer grace.Stop()
+
+	select {
+	case <-waitCh:
+		return
+	case sig := <-interrupts:
+		if isSigint(sig) {
+			hardInterruptShutdown(pid, waitCh)
+			return
+		}
+	case <-grace.C:
+	}
+
+	_ = signalProcessGroup(pid, syscall.SIGTERM)
+	termGrace := time.NewTimer(2 * time.Second)
+	defer termGrace.Stop()
+
+	select {
+	case <-waitCh:
+		return
+	case sig := <-interrupts:
+		if isSigint(sig) {
+			hardInterruptShutdown(pid, waitCh)
+			return
+		}
+	case <-termGrace.C:
+	}
+
+	_ = signalProcessGroup(pid, syscall.SIGKILL)
+	<-waitCh
+}
+
+func hardInterruptShutdown(pid int, waitCh <-chan error) {
+	_ = signalProcessGroup(pid, syscall.SIGKILL)
+	waitForChildWithDeadline(waitCh, 500*time.Millisecond)
+}
+
+func waitForChildWithDeadline(waitCh <-chan error, maxWait time.Duration) {
+	timer := time.NewTimer(maxWait)
+	defer timer.Stop()
+
+	select {
+	case <-waitCh:
+	case <-timer.C:
+	}
+}
+
+func pendingSigint(interrupts <-chan os.Signal) bool {
+	if interrupts == nil {
+		return false
+	}
+
+	select {
+	case sig := <-interrupts:
+		return isSigint(sig)
+	default:
+		return false
+	}
+}
+
+func isSigint(sig os.Signal) bool {
+	if sig == nil {
+		return false
+	}
+	return sig == os.Interrupt || sig == syscall.SIGINT
 }

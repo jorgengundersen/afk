@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -738,6 +739,66 @@ func TestMainTimeoutMainChildEscalatesToSigkillAfterGracePeriod(t *testing.T) {
 	}
 	if elapsed > 4*time.Second {
 		t.Fatalf("Main() took too long for SIGKILL timeout path: elapsed=%v, want <= 4s", elapsed)
+	}
+}
+
+func TestMainTimeoutCleansUpGrandchildrenInProcessGroup(t *testing.T) {
+	tempDir := t.TempDir()
+	terminatedFile := tempDir + "/timeout-term"
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"-n", "1", "--fail", "stop", "--timeout", "100ms", "--", "sh", "-c", fmt.Sprintf(`trap '' TERM; (trap 'printf terminated > %s; exit 0' TERM; while :; do sleep 1; done) & while :; do sleep 1; done`, terminatedFile)},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if _, err := os.Stat(terminatedFile); err != nil {
+		t.Fatalf("expected timeout cleanup to terminate grandchild in spawned process group: %v", err)
+	}
+}
+
+func TestRunLoopInterruptCleansUpGrandchildrenInProcessGroup(t *testing.T) {
+	tempDir := t.TempDir()
+	terminatedFile := tempDir + "/interrupt-term"
+
+	cfg := Config{
+		Daemon:      true,
+		CommandArgv: []string{"sh", "-c", fmt.Sprintf(`trap '' INT; trap '' TERM; (trap 'printf terminated > %s; exit 0' INT TERM; while :; do sleep 1; done) & while :; do sleep 1; done`, terminatedFile)},
+	}
+
+	interrupts := make(chan os.Signal, 2)
+	resultCh := make(chan int, 1)
+
+	go func() {
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	interrupts <- syscall.SIGINT
+
+	select {
+	case exitCode := <-resultCh:
+		if exitCode != 130 {
+			t.Fatalf("runLoopWithInterrupts() exit code = %d, want 130", exitCode)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("runLoopWithInterrupts() did not exit after SIGINT")
+	}
+
+	if _, err := os.Stat(terminatedFile); err != nil {
+		t.Fatalf("expected grandchild in spawned process group to be interrupted/terminated: %v", err)
 	}
 }
 
