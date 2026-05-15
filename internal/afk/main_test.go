@@ -165,6 +165,44 @@ func TestMainItemsCmdNonDaemonProcessesFirstNonEmptyBatchAndExitsZero(t *testing
 	}
 }
 
+func TestMainItemsCmdDaemonRepollsAfterExhaustedNonEmptyBatches(t *testing.T) {
+	tempDir := t.TempDir()
+	callsFile := tempDir + "/items-cmd-calls"
+	itemsCmd := fmt.Sprintf(
+		`n=0; if [ -f %q ]; then n=$(cat %q); fi; n=$((n+1)); printf "%%s\n" "$n" > %q; if [ "$n" -eq 1 ]; then printf "a\nb\n"; else printf "c\n"; fi`,
+		callsFile,
+		callsFile,
+		callsFile,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--daemon", "--items-cmd", itemsCmd, "--fail", "stop", "--", "sh", "-c", `printf "%s %s/%s %s\n" "$AFK_INDEX" "$AFK_ITEM_INDEX" "$AFK_ITEM_COUNT" "$AFK_ITEM"; if [ "$AFK_INDEX" -eq 3 ]; then exit 7; fi`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 7 {
+		t.Fatalf("Main() exit code = %d, want 7", exitCode)
+	}
+	if stdout.String() != "1 0/2 a\n2 1/2 b\n3 0/1 c\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1 0/2 a\\n2 1/2 b\\n3 0/1 c\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+
+	calls, err := os.ReadFile(callsFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if string(calls) != "2\n" {
+		t.Fatalf("items-cmd invocation count = %q, want %q", string(calls), "2\\n")
+	}
+}
+
 func TestMainItemsCmdStdoutIsCapturedAndStderrPassesThrough(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

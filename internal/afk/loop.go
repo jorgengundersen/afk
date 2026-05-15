@@ -24,7 +24,10 @@ func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runStaticItemLoop(cfg, stdin, stdout, stderr)
 	}
 
-	if cfg.ItemsCmdExplicit && !cfg.Daemon {
+	if cfg.ItemsCmdExplicit {
+		if cfg.Daemon {
+			return runDaemonDynamicItemLoop(cfg, stdout, stderr)
+		}
 		return runNonDaemonDynamicItemLoop(cfg, stdout, stderr)
 	}
 
@@ -147,6 +150,40 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer) int {
+	invocationIndex := 1
+
+	for {
+		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout)
+		if err != nil {
+			fmt.Fprintf(stderr, "item source error: %v\n", err)
+			return 1
+		}
+
+		if len(items) == 0 {
+			continue
+		}
+
+		for itemIndex, item := range items {
+			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
+			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout)
+			if err != nil {
+				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+					fmt.Fprintln(stderr, diagnostic)
+					return code
+				}
+				fmt.Fprintf(stderr, "execution error: %v\n", err)
+				return 1
+			}
+
+			if exitCode != 0 && cfg.Fail == "stop" {
+				return exitCode
+			}
+			invocationIndex++
+		}
+	}
 }
 
 func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration) ([]string, error) {
