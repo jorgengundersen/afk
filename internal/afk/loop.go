@@ -19,6 +19,10 @@ func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runDaemonNonItemLoop(cfg, stdin, stdout, stderr)
 	}
 
+	if cfg.ItemsExplicit {
+		return runStaticItemLoop(cfg, stdin, stdout, stderr)
+	}
+
 	return 0
 }
 
@@ -26,7 +30,8 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	lastNonZero := 0
 
 	for i := 1; i <= cfg.Loops; i++ {
-		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, i, cfg.Timeout)
+		env := EnvForNonItemInvocation(os.Environ(), i)
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
 		if err != nil {
 			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 				fmt.Fprintln(stderr, diagnostic)
@@ -61,7 +66,8 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 
 func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 	for i := 1; ; i++ {
-		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, i, cfg.Timeout)
+		env := EnvForNonItemInvocation(os.Environ(), i)
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
 		if err != nil {
 			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
 				fmt.Fprintln(stderr, diagnostic)
@@ -84,12 +90,39 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 	}
 }
 
-func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, iteration int, timeout time.Duration) (int, error) {
+func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+	items, err := ParseStaticItems(cfg.Items)
+	if err != nil {
+		fmt.Fprintf(stderr, "item parse error: %v\n", err)
+		return 1
+	}
+
+	for itemIndex, item := range items {
+		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
+		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout)
+		if err != nil {
+			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
+				fmt.Fprintln(stderr, diagnostic)
+				return code
+			}
+			fmt.Fprintf(stderr, "execution error: %v\n", err)
+			return 1
+		}
+
+		if exitCode != 0 && cfg.Fail == "stop" {
+			return exitCode
+		}
+	}
+
+	return 0
+}
+
+func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env []string, timeout time.Duration) (int, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = EnvForNonItemInvocation(os.Environ(), iteration)
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {

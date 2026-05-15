@@ -103,6 +103,22 @@ func TestMainRunsFixedLoopMainChildAndPreservesIOContract(t *testing.T) {
 	}
 }
 
+func TestMainRunsStaticItemsInSourceOrderWithItemContextEnv(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--items", "a\nb", "--", "sh", "-c", `echo "$AFK_INDEX $AFK_ITEM_INDEX/$AFK_ITEM_COUNT $AFK_ITEM"`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1 0/2 a\n2 1/2 b\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1 0/2 a\\n2 1/2 b\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
