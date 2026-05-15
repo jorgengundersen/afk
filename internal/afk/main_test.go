@@ -857,6 +857,90 @@ func TestMainTimeoutCleansUpGrandchildrenInProcessGroup(t *testing.T) {
 	}
 }
 
+func TestMainTimeoutUnderDefaultContinueFixedLoopsCompletesAttemptsAndExitsZero(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"-n", "3", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; trap 'exit 0' TERM; while :; do sleep 1; done`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n3\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n3\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainTimeoutUnderUntilSuccessFixedLoopsExhaustionReturns124(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"-n", "2", "--until-success", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; trap 'exit 0' TERM; while :; do sleep 1; done`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainTimeoutUnderFailStopDaemonExits124(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--daemon", "--fail", "stop", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; trap 'exit 0' TERM; while :; do sleep 1; done`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.String() != "1\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainTimeoutUnderUntilSuccessDaemonRetriesAndStopsOnSuccess(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--daemon", "--until-success", "--timeout", "100ms", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -eq 1 ]; then trap 'exit 0' TERM; while :; do sleep 1; done; fi; exit 0`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestRunLoopInterruptCleansUpGrandchildrenInProcessGroup(t *testing.T) {
 	tempDir := t.TempDir()
 	terminatedFile := tempDir + "/interrupt-term"
