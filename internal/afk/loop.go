@@ -23,6 +23,8 @@ func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
+	lastNonZero := 0
+
 	for i := 1; i <= cfg.Loops; i++ {
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, i, cfg.Timeout)
 		if err != nil {
@@ -33,9 +35,25 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
 		}
+
+		if cfg.UntilSuccess {
+			if exitCode == 0 {
+				return 0
+			}
+			lastNonZero = exitCode
+			continue
+		}
+
 		if exitCode != 0 && cfg.Fail == "stop" {
 			return exitCode
 		}
+	}
+
+	if cfg.UntilSuccess {
+		if lastNonZero != 0 {
+			return lastNonZero
+		}
+		return 1
 	}
 
 	return 0
@@ -52,6 +70,14 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer)
 			fmt.Fprintf(stderr, "execution error: %v\n", err)
 			return 1
 		}
+
+		if cfg.UntilSuccess {
+			if exitCode == 0 {
+				return 0
+			}
+			continue
+		}
+
 		if exitCode != 0 && cfg.Fail == "stop" {
 			return exitCode
 		}

@@ -157,6 +157,92 @@ func TestMainDaemonRerunsAfterSuccessWithoutBuiltInDelay(t *testing.T) {
 	}
 }
 
+func TestMainUntilSuccessFixedLoopsStopsAtFirstZeroExit(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--until-success", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -lt 2 ]; then exit 7; fi; exit 0`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainUntilSuccessFixedLoopsReturnsLastNonZeroWhenAttemptsExhausted(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "3", "--until-success", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; exit $((40 + AFK_INDEX))`}, nil, &stdout, &stderr)
+	if exitCode != 43 {
+		t.Fatalf("Main() exit code = %d, want 43", exitCode)
+	}
+	if stdout.String() != "1\n2\n3\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n3\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainUntilSuccessDaemonStopsAtFirstZeroExit(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	start := time.Now()
+	exitCode := Main([]string{"--daemon", "--until-success", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -lt 3 ]; then exit 9; fi; exit 0`}, nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n3\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n3\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Main() daemon until-success took too long: elapsed=%v, want <= 2s", elapsed)
+	}
+}
+
+func TestMainUntilSuccessTreatsSignaledMainChildAsFailureAndRetries(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"-n", "2", "--until-success", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -eq 1 ]; then kill -TERM $$; fi; exit 0`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainUntilSuccessDaemonTreatsSignaledMainChildAsFailureAndRetries(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--daemon", "--until-success", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -eq 1 ]; then kill -TERM $$; fi; exit 0`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainFailStopMapsSignaledMainChildTo128PlusSignal(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
