@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMainHelp(t *testing.T) {
@@ -146,6 +147,53 @@ func TestMainFailStopMapsSignaledMainChildTo128PlusSignal(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainTimeoutMainChildReturnsSynthetic124AndWaitsForChildExit(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	start := time.Now()
+	exitCode := Main([]string{"-n", "1", "--fail", "stop", "--timeout", "100ms", "--", "sh", "-c", `trap 'sleep 0.3; exit 0' TERM; while :; do sleep 1; done`}, nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if elapsed < 300*time.Millisecond {
+		t.Fatalf("Main() returned too quickly after timeout: elapsed=%v, want >= 300ms to wait for child exit", elapsed)
+	}
+}
+
+func TestMainTimeoutMainChildEscalatesToSigkillAfterGracePeriod(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	start := time.Now()
+	exitCode := Main([]string{"-n", "1", "--fail", "stop", "--timeout", "100ms", "--", "sh", "-c", `trap '' TERM; while :; do sleep 1; done`}, nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+
+	if exitCode != 124 {
+		t.Fatalf("Main() exit code = %d, want 124", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if elapsed < 2*time.Second {
+		t.Fatalf("Main() returned too quickly for SIGKILL timeout path: elapsed=%v, want >= 2s", elapsed)
+	}
+	if elapsed > 4*time.Second {
+		t.Fatalf("Main() took too long for SIGKILL timeout path: elapsed=%v, want <= 4s", elapsed)
 	}
 }
 
