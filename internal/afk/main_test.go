@@ -119,6 +119,35 @@ func TestMainRunsStaticItemsInSourceOrderWithItemContextEnv(t *testing.T) {
 	}
 }
 
+func TestMainStaticEmptyItemSourcesSkipMainChildAndExitZero(t *testing.T) {
+	tests := []struct {
+		name  string
+		items string
+	}{
+		{name: "empty string", items: ""},
+		{name: "whitespace-only newline text", items: "  \n\t"},
+		{name: "empty JSON array", items: "[]"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := Main([]string{"--items", tc.items, "--", "sh", "-c", "exit 77"}, nil, &stdout, &stderr)
+			if exitCode != 0 {
+				t.Fatalf("Main() exit code = %d, want 0", exitCode)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("Main() stdout = %q, want empty", stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
 func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
