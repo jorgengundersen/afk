@@ -135,6 +135,28 @@ func TestMainFailStopDaemonStopsAtFirstNonZeroExit(t *testing.T) {
 	}
 }
 
+func TestMainDaemonRerunsAfterSuccessWithoutBuiltInDelay(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	start := time.Now()
+	exitCode := Main([]string{"--daemon", "--fail", "stop", "--", "sh", "-c", `printf "%s\n" "$AFK_INDEX"; if [ "$AFK_INDEX" -eq 1 ]; then exit 0; fi; exit 7`}, nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+
+	if exitCode != 7 {
+		t.Fatalf("Main() exit code = %d, want 7", exitCode)
+	}
+	if stdout.String() != "1\n2\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Main() daemon non-item rerun took too long: elapsed=%v, want <= 2s (no built-in delay)", elapsed)
+	}
+}
+
 func TestMainFailStopMapsSignaledMainChildTo128PlusSignal(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
