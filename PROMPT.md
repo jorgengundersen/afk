@@ -10,7 +10,7 @@ If you are about to write a plan-only final answer, make the next tool call inst
 
 ## Start
 
-1. Run `bd ready --json`.
+1. Run `bd ready --label ralph --json`.
 2. Select the first non-epic ready issue. If the first ready item is an epic, inspect it with `bd show <id> --json` and claim the first ready/open child instead. Claim an epic only if the epic itself is the direct work item.
 3. Claim exactly one issue with `bd update <id> --claim --json` and remember `CLAIMED_ID=<id>`.
 4. Immediately inspect `CLAIMED_ID` with `bd show <id> --json` and restate the concrete acceptance target in your internal working context. Do not final-answer here.

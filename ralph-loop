@@ -5,7 +5,7 @@ cleanup() { kill 0 2>/dev/null; wait 2>/dev/null; }
 trap cleanup EXIT INT TERM
 
 while :; do
-  ready=$(bd ready --json 2>/dev/null || echo "[]")
+  ready=$(bd ready --label ralph --json 2>/dev/null || echo "[]")
   if [ "$ready" = "[]" ] || [ -z "$ready" ]; then
     echo "No ready work. Sleeping 60s..."
     sleep 60
