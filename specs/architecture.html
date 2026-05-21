@@ -198,6 +198,15 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     disabled by default. Errors, usage failures, timeout messages, interrupt
     messages, and other required diagnostics go to stderr and should be minimal.
   </p>
+  <h3>12.1 Timeout and Interrupt Diagnostic Contract</h3>
+  <ul>
+    <li>Timeout and interrupt diagnostics are required stderr-only <code>afk</code> control output.</li>
+    <li>Exact full sentence wording is not part of the contract unless a future spec says otherwise.</li>
+    <li>A timeout diagnostic must communicate, in one or more stderr lines, that a timeout occurred, which spawned command timed out (<code>main child</code> or <code>--items-cmd</code>), and the configured timeout duration.</li>
+    <li>An interrupt diagnostic must communicate, in one or more stderr lines, that shutdown is due to user interrupt and that <code>afk</code> exits with interrupt semantics (exit <code>130</code>).</li>
+    <li>If a second interrupt triggers hard shutdown, stderr must also communicate that escalation occurred.</li>
+    <li>Diagnostics may include small extra context, but must remain minimal and must not add routine progress/status chatter.</li>
+  </ul>
 
   <h2>13. Exit Codes</h2>
   <ul>
