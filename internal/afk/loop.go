@@ -59,15 +59,7 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 		env := EnvForNonItemInvocation(os.Environ(), i)
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
-			if errors.Is(err, errInterrupted) {
-				return 130
-			}
-			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-				fmt.Fprintln(stderr, diagnostic)
-				return code
-			}
-			fmt.Fprintf(stderr, "execution error: %v\n", err)
-			return 1
+			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
 		if cfg.UntilSuccess {
@@ -102,15 +94,7 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 		env := EnvForNonItemInvocation(os.Environ(), i)
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
-			if errors.Is(err, errInterrupted) {
-				return 130
-			}
-			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-				fmt.Fprintln(stderr, diagnostic)
-				return code
-			}
-			fmt.Fprintf(stderr, "execution error: %v\n", err)
-			return 1
+			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
 		if cfg.UntilSuccess {
@@ -141,15 +125,7 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, in
 		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
 		exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 		if err != nil {
-			if errors.Is(err, errInterrupted) {
-				return 130
-			}
-			if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-				fmt.Fprintln(stderr, diagnostic)
-				return code
-			}
-			fmt.Fprintf(stderr, "execution error: %v\n", err)
-			return 1
+			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
 		if exitCode != 0 && cfg.Fail == "stop" {
@@ -199,15 +175,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
 			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
-				if errors.Is(err, errInterrupted) {
-					return 130
-				}
-				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-					fmt.Fprintln(stderr, diagnostic)
-					return code
-				}
-				fmt.Fprintf(stderr, "execution error: %v\n", err)
-				return 1
+				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}
 
 			if exitCode != 0 && cfg.Fail == "stop" {
@@ -254,15 +222,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
 			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
-				if errors.Is(err, errInterrupted) {
-					return 130
-				}
-				if code, diagnostic, ok := classifyMainChildStartFailure(cfg.CommandArgv[0], err); ok {
-					fmt.Fprintln(stderr, diagnostic)
-					return code
-				}
-				fmt.Fprintf(stderr, "execution error: %v\n", err)
-				return 1
+				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}
 
 			if exitCode != 0 && cfg.Fail == "stop" {
@@ -377,6 +337,18 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 			return 130, errInterrupted
 		}
 	}
+}
+
+func mapMainChildExecutionError(command string, err error, stderr io.Writer) int {
+	if errors.Is(err, errInterrupted) {
+		return 130
+	}
+	if code, diagnostic, ok := classifyMainChildStartFailure(command, err); ok {
+		fmt.Fprintln(stderr, diagnostic)
+		return code
+	}
+	fmt.Fprintf(stderr, "execution error: %v\n", err)
+	return 1
 }
 
 func mapMainChildWaitResult(err error) (int, error) {
