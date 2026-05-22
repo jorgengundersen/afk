@@ -19,17 +19,18 @@ The workflow has three phases:
 tmp/project-analysis/<run-id>/
   00-manifest.md
   01-baseline.md
+  02-audit-map.md
   findings/
-    A3-product-drift.md
-    A4-design-drift.md
-    A5-architecture-drift.md
-    A6-standards-conformance.md
-    A7-test-quality.md
-    A8-code-health.md
-    A9-operational-readiness.md
-    A10-security-privacy.md
-    A11-performance-scalability.md
-    A12-accessibility-docs-change-safety.md
+    A4-product-drift.md
+    A5-design-drift.md
+    A6-architecture-drift.md
+    A7-standards-conformance.md
+    A8-test-quality.md
+    A9-code-health.md
+    A10-operational-readiness.md
+    A11-security-privacy.md
+    A12-performance-scalability.md
+    A13-accessibility-docs-change-safety.md
   final/
     project-analysis-report.md
     project-analysis-findings.jsonl
@@ -74,16 +75,16 @@ status: in_progress
 - `specs/coding-testing-standards.html`
 
 ## Planned audit tasks
-- A3 product drift
-- A4 design drift
-- A5 architecture drift
-- A6 standards conformance
-- A7 test quality
-- A8 code health
-- A9 operational readiness
-- A10 security/privacy
-- A11 performance/scalability
-- A12 accessibility/docs/change-safety
+- A4 product drift
+- A5 design drift
+- A6 architecture drift
+- A7 standards conformance
+- A8 test quality
+- A9 code health
+- A10 operational readiness
+- A11 security/privacy
+- A12 performance/scalability
+- A13 accessibility/docs/change-safety
 
 ## Output locations
 - Findings: `tmp/project-analysis/<run-id>/findings/`
@@ -110,7 +111,7 @@ One scoped audit pass by one loop.
 
 ```md
 ---
-task_id: A5
+task_id: A6
 task_title: Audit architecture drift vs architecture spec
 mode: explore
 run_id: <run-id>
@@ -133,7 +134,7 @@ status: complete
 
 # Findings
 
-## A5-F1
+## A6-F1
 - Type: Drift
 - Severity: High
 - Confidence: High
@@ -150,7 +151,7 @@ status: complete
   - `Missing`
 - Recommended action: Code fix
 
-## A5-F2
+## A6-F2
 - Type: Quality risk
 - Severity: Medium
 - Confidence: Medium
@@ -186,7 +187,7 @@ status: complete
 
 ### Rules
 - exactly one task per file
-- stable IDs like `A5-F1`, `A5-F2`
+- stable IDs like `A6-F1`, `A6-F2`
 - no cross-task synthesis
 - no implementation plan
 - no issue decomposition
@@ -210,16 +211,16 @@ mode: synthesize
 baseline: <commit-sha>
 generated_at: <ISO-8601 timestamp>
 source_findings:
-  - findings/A3-product-drift.md
-  - findings/A4-design-drift.md
-  - findings/A5-architecture-drift.md
-  - findings/A6-standards-conformance.md
-  - findings/A7-test-quality.md
-  - findings/A8-code-health.md
-  - findings/A9-operational-readiness.md
-  - findings/A10-security-privacy.md
-  - findings/A11-performance-scalability.md
-  - findings/A12-accessibility-docs-change-safety.md
+  - findings/A4-product-drift.md
+  - findings/A5-design-drift.md
+  - findings/A6-architecture-drift.md
+  - findings/A7-standards-conformance.md
+  - findings/A8-test-quality.md
+  - findings/A9-code-health.md
+  - findings/A10-operational-readiness.md
+  - findings/A11-security-privacy.md
+  - findings/A12-performance-scalability.md
+  - findings/A13-accessibility-docs-change-safety.md
 ---
 
 # Executive summary
@@ -325,7 +326,7 @@ Machine-friendly canonical finding index.
 ```json
 {
   "canonical_id": "PA-001",
-  "source_ids": ["A5-F1", "A8-F2"],
+  "source_ids": ["A6-F1", "A9-F2"],
   "run_id": "2026-05-15-v1-audit",
   "baseline": "<commit-sha>",
   "category": "architecture-drift",
@@ -346,8 +347,8 @@ Machine-friendly canonical finding index.
   "followup_kind": "refactor",
   "priority_bucket": "fix-soon",
   "provenance_files": [
-    "tmp/project-analysis/<run-id>/findings/A5-architecture-drift.md",
-    "tmp/project-analysis/<run-id>/findings/A8-code-health.md"
+    "tmp/project-analysis/<run-id>/findings/A6-architecture-drift.md",
+    "tmp/project-analysis/<run-id>/findings/A9-code-health.md"
   ],
   "open_questions": []
 }
@@ -526,7 +527,7 @@ Use @docs/project-analysis/PROJECT-ANALYSIS.md.
 Mode: explore
 Run ID: <run-id>
 Baseline: <commit-sha>
-Task ID: A5
+Task ID: A6
 Specs to read:
 - specs/architecture.html
 
@@ -537,7 +538,7 @@ Test areas:
 - <paths>
 
 Output path:
-- tmp/project-analysis/<run-id>/findings/A5-architecture-drift.md
+- tmp/project-analysis/<run-id>/findings/A6-architecture-drift.md
 
 Constraints:
 - analysis only
@@ -557,16 +558,16 @@ Run ID: <run-id>
 Baseline: <commit-sha>
 
 Input paths:
-- tmp/project-analysis/<run-id>/findings/A3-product-drift.md
-- tmp/project-analysis/<run-id>/findings/A4-design-drift.md
-- tmp/project-analysis/<run-id>/findings/A5-architecture-drift.md
-- tmp/project-analysis/<run-id>/findings/A6-standards-conformance.md
-- tmp/project-analysis/<run-id>/findings/A7-test-quality.md
-- tmp/project-analysis/<run-id>/findings/A8-code-health.md
-- tmp/project-analysis/<run-id>/findings/A9-operational-readiness.md
-- tmp/project-analysis/<run-id>/findings/A10-security-privacy.md
-- tmp/project-analysis/<run-id>/findings/A11-performance-scalability.md
-- tmp/project-analysis/<run-id>/findings/A12-accessibility-docs-change-safety.md
+- tmp/project-analysis/<run-id>/findings/A4-product-drift.md
+- tmp/project-analysis/<run-id>/findings/A5-design-drift.md
+- tmp/project-analysis/<run-id>/findings/A6-architecture-drift.md
+- tmp/project-analysis/<run-id>/findings/A7-standards-conformance.md
+- tmp/project-analysis/<run-id>/findings/A8-test-quality.md
+- tmp/project-analysis/<run-id>/findings/A9-code-health.md
+- tmp/project-analysis/<run-id>/findings/A10-operational-readiness.md
+- tmp/project-analysis/<run-id>/findings/A11-security-privacy.md
+- tmp/project-analysis/<run-id>/findings/A12-performance-scalability.md
+- tmp/project-analysis/<run-id>/findings/A13-accessibility-docs-change-safety.md
 
 Output paths:
 - tmp/project-analysis/<run-id>/final/project-analysis-report.md

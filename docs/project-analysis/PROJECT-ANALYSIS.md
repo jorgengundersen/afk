@@ -15,6 +15,11 @@ Use these tracked paths for all project-analysis runs:
 
 Exploratory and run-scoped outputs must stay under `tmp/project-analysis/<run-id>/`.
 
+Current run/task numbering conventions:
+- run scaffolding files: `00-manifest.md`, `01-baseline.md`, `02-audit-map.md`
+- exploratory findings tasks/files: `A4` through `A13`
+- synthesis inputs must reference the same `A4` through `A13` findings file set
+
 ## Hard constraints
 
 - Do **not** modify implementation code.
@@ -217,7 +222,7 @@ Use run-scoped temp output paths under:
 `tmp/project-analysis/<run-id>/`
 
 Examples:
-- `tmp/project-analysis/<run-id>/findings/A5-architecture-drift.md`
+- `tmp/project-analysis/<run-id>/findings/A6-architecture-drift.md`
 - `tmp/project-analysis/<run-id>/final/project-analysis-report.md`
 - `tmp/project-analysis/<run-id>/final/project-analysis-findings.jsonl`
 - `tmp/project-analysis/<run-id>/final/remediation-planning-brief.md`
