@@ -3,11 +3,16 @@ package afk
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 // ParseStaticItems parses static item input as a JSON array when possible,
 // otherwise as newline-delimited text.
 func ParseStaticItems(input string) ([]string, error) {
+	if shouldParseAsNewlineWithoutJSONAttempt(input) {
+		return parseNewlineItems(input), nil
+	}
+
 	var parsed any
 	if err := json.Unmarshal([]byte(input), &parsed); err == nil {
 		array, isArray := parsed.([]any)
@@ -21,6 +26,21 @@ func ParseStaticItems(input string) ([]string, error) {
 	}
 
 	return parseNewlineItems(input), nil
+}
+
+func shouldParseAsNewlineWithoutJSONAttempt(input string) bool {
+	if !strings.ContainsRune(input, '\n') {
+		return false
+	}
+
+	for _, r := range input {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		return r != '['
+	}
+
+	return true
 }
 
 func parseJSONArrayItems(array []any) ([]string, error) {

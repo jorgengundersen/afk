@@ -99,3 +99,26 @@ func TestParseStaticItems_NewlineParsingIgnoresBlankUnicodeWhitespaceLines(t *te
 		t.Fatalf("items = %#v, want %#v", items, want)
 	}
 }
+
+func TestShouldParseAsNewlineWithoutJSONAttempt(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "newline-delimited items", input: "alpha\nbeta\n", want: true},
+		{name: "whitespace-only with newline", input: "\n\t\u2003\n", want: true},
+		{name: "json array candidate", input: "[\"alpha\",\"beta\"]", want: false},
+		{name: "pretty json array candidate", input: " \n [\"alpha\",\n\"beta\"]\n", want: false},
+		{name: "single-line scalar", input: "alpha", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldParseAsNewlineWithoutJSONAttempt(tc.input)
+			if got != tc.want {
+				t.Fatalf("shouldParseAsNewlineWithoutJSONAttempt(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
