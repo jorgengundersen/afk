@@ -5,6 +5,7 @@ SLEEP_SECONDS="${RALPH_LOOP_SLEEP_SECONDS:-60}"
 AGENT_TIMEOUT="${RALPH_AGENT_TIMEOUT:-45m}"
 PROVIDER="${RALPH_PROVIDER:-openai-codex}"
 MODEL="${RALPH_MODEL:-gpt-5.3-codex}"
+PI_JSON_FORMATTER="${RALPH_PI_JSON_FORMATTER:-./pi-json-human}"
 
 cleanup() {
   trap - EXIT INT TERM
@@ -42,6 +43,28 @@ branch_not_uptodate() {
 
 print_worktree_status() {
   git status --short --branch
+}
+
+pi_json_human_enabled() {
+  [ "${RALPH_PI_JSON_HUMAN:-1}" != "0" ] && [ -x "$PI_JSON_FORMATTER" ]
+}
+
+run_ralph_agent() {
+  local timeout_cmd=()
+  if command -v timeout >/dev/null 2>&1; then
+    timeout_cmd=(timeout --foreground "$AGENT_TIMEOUT")
+  fi
+
+  if pi_json_human_enabled; then
+    "${timeout_cmd[@]}" \
+      pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md" \
+      | "$PI_JSON_FORMATTER"
+    local statuses=("${PIPESTATUS[@]}")
+    return "${statuses[0]}"
+  fi
+
+  "${timeout_cmd[@]}" \
+    pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md"
 }
 
 in_progress_ralph_work() {
@@ -87,12 +110,7 @@ while :; do
 
   echo "Launching ralph agent for ${ready_count} ready issue(s)."
   agent_status=0
-  if command -v timeout >/dev/null 2>&1; then
-    timeout --foreground "$AGENT_TIMEOUT" \
-      pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md" || agent_status=$?
-  else
-    pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md" || agent_status=$?
-  fi
+  run_ralph_agent || agent_status=$?
 
   if [ "$agent_status" -ne 0 ]; then
     echo "ralph agent exited with status ${agent_status}."

@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""Render `pi --mode json` JSONL as a human-readable stream.
+
+Usage:
+  pi --mode json "prompt" | ./pi-json-human
+
+Environment:
+  PI_JSON_HUMAN_COLOR=auto|always|never   Color policy (default: auto)
+  PI_JSON_HUMAN_MAX_TOOL_CHARS=N          Max chars shown for tool results (default: 1600)
+  PI_JSON_HUMAN_MAX_TOOL_LINES=N          Max lines shown for tool results (default: 40)
+  PI_JSON_HUMAN_SHOW_THINKING=1           Show thinking deltas (default: hidden)
+  PI_JSON_HUMAN_STREAM_TOOL_OUTPUT=1      Stream accumulated tool output as deltas
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Any
+
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except AttributeError:
+    pass
+
+COLOR_POLICY = os.environ.get("PI_JSON_HUMAN_COLOR", "auto").lower()
+USE_COLOR = COLOR_POLICY == "always" or (
+    COLOR_POLICY == "auto" and sys.stdout.isatty() and "NO_COLOR" not in os.environ
+)
+SHOW_THINKING = os.environ.get("PI_JSON_HUMAN_SHOW_THINKING", "") not in ("", "0", "false", "False")
+STREAM_TOOL_OUTPUT = os.environ.get("PI_JSON_HUMAN_STREAM_TOOL_OUTPUT", "") not in ("", "0", "false", "False")
+MAX_TOOL_CHARS = int(os.environ.get("PI_JSON_HUMAN_MAX_TOOL_CHARS", "1600"))
+MAX_TOOL_LINES = int(os.environ.get("PI_JSON_HUMAN_MAX_TOOL_LINES", "40"))
+
+STYLES = {
+    "reset": "\033[0m",
+    "bold": "\033[1m",
+    "dim": "\033[2m",
+    "green": "\033[0;32m",
+    "yellow": "\033[0;33m",
+    "cyan": "\033[0;36m",
+    "red": "\033[0;31m",
+}
+
+
+def style(name: str, text: str) -> str:
+    if not USE_COLOR:
+        return text
+    return f"{STYLES[name]}{text}{STYLES['reset']}"
+
+
+class Renderer:
+    def __init__(self) -> None:
+        self.at_line_start = True
+        self.in_text = False
+        self.in_thinking = False
+        self.saw_text_delta = False
+        self.tool_output_lengths: dict[str, int] = {}
+        self.tool_update_announced: set[str] = set()
+
+    def write(self, text: str) -> None:
+        if not text:
+            return
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        self.at_line_start = text.endswith("\n")
+
+    def line(self, text: str = "") -> None:
+        self.write(text + "\n")
+
+    def newline(self) -> None:
+        if not self.at_line_start:
+            self.line()
+
+    def section(self, text: str, color: str = "bold") -> None:
+        self.newline()
+        self.line(style(color, text))
+
+    def handle(self, event: dict[str, Any]) -> None:
+        event_type = event.get("type")
+        if event_type == "session":
+            session_id = str(event.get("id", ""))[:8]
+            cwd = event.get("cwd", "")
+            suffix = f" in {cwd}" if cwd else ""
+            self.line(style("dim", f"pi session {session_id}{suffix}"))
+        elif event_type == "agent_start":
+            self.section("▶ pi agent started", "green")
+        elif event_type == "agent_end":
+            self.section("✓ pi agent finished", "green")
+        elif event_type == "message_update":
+            self.message_update(event.get("assistantMessageEvent") or {})
+        elif event_type == "message_end":
+            self.message_end(event.get("message") or {})
+        elif event_type == "tool_execution_start":
+            self.tool_start(event)
+        elif event_type == "tool_execution_update":
+            self.tool_update(event)
+        elif event_type == "tool_execution_end":
+            self.tool_end(event)
+        elif event_type == "compaction_start":
+            self.section(f"◌ compaction started ({event.get('reason', 'unknown')})", "yellow")
+        elif event_type == "compaction_end":
+            aborted = event.get("aborted")
+            color = "red" if aborted else "green"
+            status = "aborted" if aborted else "finished"
+            retry = "; will retry" if event.get("willRetry") else ""
+            error = f": {event.get('errorMessage')}" if event.get("errorMessage") else ""
+            self.section(f"◌ compaction {status} ({event.get('reason', 'unknown')}{retry}){error}", color)
+        elif event_type == "auto_retry_start":
+            delay = event.get("delayMs", 0)
+            self.section(
+                f"↻ retry {event.get('attempt')}/{event.get('maxAttempts')} in {delay}ms: {event.get('errorMessage', '')}",
+                "yellow",
+            )
+        elif event_type == "auto_retry_end":
+            color = "green" if event.get("success") else "red"
+            detail = event.get("finalError") or ("success" if event.get("success") else "failed")
+            self.section(f"↻ retry ended: {detail}", color)
+        elif event_type == "queue_update":
+            steering = event.get("steering") or []
+            follow_up = event.get("followUp") or []
+            if steering or follow_up:
+                self.section(f"☰ queue: {len(steering)} steering, {len(follow_up)} follow-up", "cyan")
+        elif event_type == "extension_error":
+            self.section(f"✗ extension error: {event.get('message') or event}", "red")
+        elif event_type in ("turn_start", "turn_end", "message_start"):
+            return
+        else:
+            self.section(f"• {event_type or 'event'}", "dim")
+            self.line(style("dim", compact_json(event, 800)))
+
+    def message_update(self, assistant_event: dict[str, Any]) -> None:
+        update_type = assistant_event.get("type")
+        if update_type in ("text_start", "text_delta"):
+            self.start_text()
+            delta = assistant_event.get("delta")
+            if delta:
+                self.saw_text_delta = True
+                self.write(str(delta))
+        elif update_type == "text_end":
+            self.end_text()
+        elif update_type in ("thinking_start", "thinking_delta") and SHOW_THINKING:
+            self.start_thinking()
+            delta = assistant_event.get("delta")
+            if delta:
+                self.write(style("dim", str(delta)))
+        elif update_type == "thinking_end" and SHOW_THINKING:
+            self.end_thinking()
+        elif update_type == "toolcall_end":
+            tool_call = assistant_event.get("toolCall") or {}
+            name = tool_call.get("name") or tool_call.get("toolName")
+            args = tool_call.get("args") or tool_call.get("input")
+            if name:
+                self.newline()
+                self.line(style("cyan", f"⚙ requested {name}"))
+                self.print_args(args)
+        elif update_type == "error":
+            self.section(f"✗ message error: {assistant_event.get('reason', 'error')}", "red")
+
+    def message_end(self, message: dict[str, Any]) -> None:
+        if self.in_text:
+            self.end_text()
+        if self.in_thinking:
+            self.end_thinking()
+        if not self.saw_text_delta and message.get("role") == "assistant":
+            text = message_text(message)
+            if text.strip():
+                self.section("Assistant:", "bold")
+                self.line(text.rstrip("\n"))
+        self.saw_text_delta = False
+
+    def start_text(self) -> None:
+        if not self.in_text:
+            self.section("Assistant:", "bold")
+            self.in_text = True
+
+    def end_text(self) -> None:
+        if self.in_text:
+            self.newline()
+            self.in_text = False
+
+    def start_thinking(self) -> None:
+        if not self.in_thinking:
+            self.section("Thinking:", "dim")
+            self.in_thinking = True
+
+    def end_thinking(self) -> None:
+        if self.in_thinking:
+            self.newline()
+            self.in_thinking = False
+
+    def tool_start(self, event: dict[str, Any]) -> None:
+        self.newline()
+        name = event.get("toolName", "tool")
+        self.line(style("cyan", f"⚙ {name}"))
+        self.print_args(event.get("args"))
+
+    def tool_update(self, event: dict[str, Any]) -> None:
+        call_id = str(event.get("toolCallId", ""))
+        if not STREAM_TOOL_OUTPUT:
+            if call_id not in self.tool_update_announced:
+                self.tool_update_announced.add(call_id)
+                self.line(style("dim", "  … running"))
+            return
+
+        text = result_text(event.get("partialResult"))
+        previous_len = self.tool_output_lengths.get(call_id, 0)
+        if len(text) > previous_len:
+            self.write(style("dim", text[previous_len:]))
+            self.tool_output_lengths[call_id] = len(text)
+
+    def tool_end(self, event: dict[str, Any]) -> None:
+        self.newline()
+        name = event.get("toolName", "tool")
+        is_error = bool(event.get("isError"))
+        icon = "✗" if is_error else "✓"
+        color = "red" if is_error else "green"
+        self.line(style(color, f"{icon} {name} finished"))
+
+        text = result_text(event.get("result")).strip("\n")
+        if text:
+            excerpt, note = truncate_text(text, MAX_TOOL_CHARS, MAX_TOOL_LINES)
+            color_name = "yellow" if is_error else "dim"
+            for line in excerpt.splitlines() or [excerpt]:
+                self.line(style(color_name, f"  {line}"))
+            if note:
+                self.line(style("dim", f"  … {note}"))
+
+    def print_args(self, args: Any) -> None:
+        if args is None:
+            return
+        if isinstance(args, dict):
+            for key, value in args.items():
+                rendered = compact_value(value)
+                if key == "command" and isinstance(value, str):
+                    self.line(style("dim", f"  $ {rendered}"))
+                else:
+                    self.line(style("dim", f"  {key}: {rendered}"))
+        else:
+            self.line(style("dim", f"  {compact_value(args)}"))
+
+
+def compact_value(value: Any, limit: int = 240) -> str:
+    if isinstance(value, str):
+        text = value.replace("\n", "\\n")
+    else:
+        text = compact_json(value, limit)
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
+    return text
+
+
+def compact_json(value: Any, limit: int = 1000) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except TypeError:
+        text = str(value)
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
+    return text
+
+
+def result_text(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, dict):
+        return compact_json(result, MAX_TOOL_CHARS)
+
+    content = result.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    chunks.append(text)
+                elif item.get("type"):
+                    chunks.append(compact_json(item, 400))
+            else:
+                chunks.append(str(item))
+        return "\n".join(chunk for chunk in chunks if chunk)
+
+    if "text" in result and isinstance(result["text"], str):
+        return result["text"]
+    return compact_json(result, MAX_TOOL_CHARS)
+
+
+def message_text(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    chunks: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            chunks.append(item)
+        elif isinstance(item, dict):
+            item_type = item.get("type")
+            text = item.get("text") or item.get("content")
+            if item_type in ("text", None) and isinstance(text, str):
+                chunks.append(text)
+    return "".join(chunks)
+
+
+def truncate_text(text: str, max_chars: int, max_lines: int) -> tuple[str, str]:
+    lines = text.splitlines()
+    omitted_lines = max(0, len(lines) - max_lines)
+    if omitted_lines:
+        text = "\n".join(lines[:max_lines])
+
+    omitted_chars = max(0, len(text) - max_chars)
+    if omitted_chars:
+        text = text[:max_chars].rstrip()
+
+    notes = []
+    if omitted_lines:
+        notes.append(f"{omitted_lines} line(s) omitted")
+    if omitted_chars:
+        notes.append(f"{omitted_chars} char(s) omitted")
+    return text, ", ".join(notes)
+
+
+def main() -> int:
+    renderer = Renderer()
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            renderer.newline()
+            renderer.line(style("yellow", raw_line.rstrip("\n")))
+            continue
+        if isinstance(event, dict):
+            renderer.handle(event)
+        else:
+            renderer.line(style("dim", compact_json(event)))
+    renderer.newline()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
