@@ -53,7 +53,7 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 
 	for i := 1; i <= cfg.Loops; i++ {
 		if pendingSigint(interrupts) {
-			return 130
+			return interruptExit(stderr)
 		}
 
 		env := EnvForNonItemInvocation(os.Environ(), i)
@@ -96,7 +96,7 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	for i := 1; ; i++ {
 		if pendingSigint(interrupts) {
-			return 130
+			return interruptExit(stderr)
 		}
 
 		env := EnvForNonItemInvocation(os.Environ(), i)
@@ -135,7 +135,7 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, in
 
 	for itemIndex, item := range items {
 		if pendingSigint(interrupts) {
-			return 130
+			return interruptExit(stderr)
 		}
 
 		env := EnvForItemInvocation(os.Environ(), itemIndex+1, item, itemIndex, len(items))
@@ -166,7 +166,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 
 	for {
 		if pendingSigint(interrupts) {
-			return 130
+			return interruptExit(stderr)
 		}
 
 		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout, interrupts)
@@ -185,7 +185,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 			remainingEmptySleeps--
 			if cfg.Sleep > 0 {
 				if interruptibleSleep(cfg.Sleep, interrupts) {
-					return 130
+					return interruptExit(stderr)
 				}
 			}
 			continue
@@ -193,7 +193,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 
 		for itemIndex, item := range items {
 			if pendingSigint(interrupts) {
-				return 130
+				return interruptExit(stderr)
 			}
 
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
@@ -225,7 +225,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 
 	for {
 		if pendingSigint(interrupts) {
-			return 130
+			return interruptExit(stderr)
 		}
 
 		items, err := runItemsCommand(cfg.ItemsCmd, stderr, cfg.Timeout, interrupts)
@@ -240,7 +240,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 		if len(items) == 0 {
 			if cfg.Sleep > 0 {
 				if interruptibleSleep(cfg.Sleep, interrupts) {
-					return 130
+					return interruptExit(stderr)
 				}
 			}
 			continue
@@ -248,7 +248,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 
 		for itemIndex, item := range items {
 			if pendingSigint(interrupts) {
-				return 130
+				return interruptExit(stderr)
 			}
 
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
@@ -319,7 +319,11 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 			if !isSigint(sig) {
 				continue
 			}
-			gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			emitInterruptDiagnostic(stderr)
+			if escalated {
+				emitSecondInterruptEscalationDiagnostic(stderr)
+			}
 			capturedStdout.Reset()
 			return nil, errInterrupted
 		}
@@ -365,7 +369,11 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 			if !isSigint(sig) {
 				continue
 			}
-			gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			emitInterruptDiagnostic(stderr)
+			if escalated {
+				emitSecondInterruptEscalationDiagnostic(stderr)
+			}
 			return 130, errInterrupted
 		}
 	}
@@ -440,7 +448,7 @@ func terminateProcessGroupOnTimeout(pid int, waitCh <-chan error) error {
 	}
 }
 
-func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan os.Signal) {
+func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan os.Signal) bool {
 	_ = signalProcessGroup(pid, syscall.SIGINT)
 
 	grace := time.NewTimer(5 * time.Second)
@@ -448,11 +456,11 @@ func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan o
 
 	select {
 	case <-waitCh:
-		return
+		return false
 	case sig := <-interrupts:
 		if isSigint(sig) {
 			hardInterruptShutdown(pid, waitCh)
-			return
+			return true
 		}
 	case <-grace.C:
 	}
@@ -463,17 +471,18 @@ func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan o
 
 	select {
 	case <-waitCh:
-		return
+		return false
 	case sig := <-interrupts:
 		if isSigint(sig) {
 			hardInterruptShutdown(pid, waitCh)
-			return
+			return true
 		}
 	case <-termGrace.C:
 	}
 
 	_ = signalProcessGroup(pid, syscall.SIGKILL)
 	<-waitCh
+	return false
 }
 
 func hardInterruptShutdown(pid int, waitCh <-chan error) {
@@ -511,9 +520,28 @@ func isSigint(sig os.Signal) bool {
 	return sig == os.Interrupt || sig == syscall.SIGINT
 }
 
+func interruptExit(stderr io.Writer) int {
+	emitInterruptDiagnostic(stderr)
+	return 130
+}
+
 func emitTimeoutDiagnostic(stderr io.Writer, commandRole string, timeout time.Duration) {
 	if stderr == nil {
 		return
 	}
 	fmt.Fprintf(stderr, "timeout: %s exceeded %s\n", commandRole, timeout)
+}
+
+func emitInterruptDiagnostic(stderr io.Writer) {
+	if stderr == nil {
+		return
+	}
+	fmt.Fprintln(stderr, "interrupt: user requested shutdown; exiting 130")
+}
+
+func emitSecondInterruptEscalationDiagnostic(stderr io.Writer) {
+	if stderr == nil {
+		return
+	}
+	fmt.Fprintln(stderr, "interrupt: second SIGINT received; forcing hard shutdown")
 }

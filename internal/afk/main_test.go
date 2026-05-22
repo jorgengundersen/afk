@@ -24,6 +24,26 @@ func assertTimeoutDiagnostics(t *testing.T, stderr string, role string, duration
 	}
 }
 
+func assertInterruptDiagnostics(t *testing.T, stderr string, wantEscalation bool) {
+	t.Helper()
+
+	lower := strings.ToLower(stderr)
+	if !strings.Contains(lower, "interrupt") {
+		t.Fatalf("stderr = %q, want interrupt diagnostic", stderr)
+	}
+	if !strings.Contains(lower, "130") {
+		t.Fatalf("stderr = %q, want interrupt exit semantics mention (130)", stderr)
+	}
+
+	hasEscalation := strings.Contains(lower, "second") && strings.Contains(lower, "forc")
+	if wantEscalation && !hasEscalation {
+		t.Fatalf("stderr = %q, want second-interrupt escalation diagnostic", stderr)
+	}
+	if !wantEscalation && hasEscalation {
+		t.Fatalf("stderr = %q, got unexpected second-interrupt escalation diagnostic", stderr)
+	}
+}
+
 func TestMainHelp(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -596,9 +616,7 @@ func TestRunLoopDefaultFailContinueDaemonKeepsRerunningSignaledMainChildUntilInt
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
-	}
+	assertInterruptDiagnostics(t, stderr.String(), false)
 }
 
 func TestMainFailStopFixedLoopsStopsAtFirstNonZeroExit(t *testing.T) {
@@ -956,9 +974,10 @@ func TestRunLoopInterruptCleansUpGrandchildrenInProcessGroup(t *testing.T) {
 
 	interrupts := make(chan os.Signal, 2)
 	resultCh := make(chan int, 1)
+	stderr := new(bytes.Buffer)
 
 	go func() {
-		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), stderr, interrupts)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -976,6 +995,7 @@ func TestRunLoopInterruptCleansUpGrandchildrenInProcessGroup(t *testing.T) {
 	if _, err := os.Stat(terminatedFile); err != nil {
 		t.Fatalf("expected grandchild in spawned process group to be interrupted/terminated: %v", err)
 	}
+	assertInterruptDiagnostics(t, stderr.String(), false)
 }
 
 func TestRunLoopInterruptDuringItemsCommandExits130AndDoesNotRunMainChild(t *testing.T) {
@@ -992,9 +1012,10 @@ func TestRunLoopInterruptDuringItemsCommandExits130AndDoesNotRunMainChild(t *tes
 
 	interrupts := make(chan os.Signal, 2)
 	resultCh := make(chan int, 1)
+	stderr := new(bytes.Buffer)
 
 	go func() {
-		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), stderr, interrupts)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -1015,6 +1036,7 @@ func TestRunLoopInterruptDuringItemsCommandExits130AndDoesNotRunMainChild(t *tes
 	if _, err := os.Stat(mainRunsFile); !os.IsNotExist(err) {
 		t.Fatalf("expected no main-child invocation after items-cmd interrupt, stat err=%v", err)
 	}
+	assertInterruptDiagnostics(t, stderr.String(), false)
 }
 
 func TestRunLoopFirstSigintStopsSchedulingNewDaemonIterations(t *testing.T) {
@@ -1028,9 +1050,10 @@ func TestRunLoopFirstSigintStopsSchedulingNewDaemonIterations(t *testing.T) {
 
 	interrupts := make(chan os.Signal, 2)
 	resultCh := make(chan int, 1)
+	stderr := new(bytes.Buffer)
 
 	go func() {
-		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), stderr, interrupts)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -1052,6 +1075,7 @@ func TestRunLoopFirstSigintStopsSchedulingNewDaemonIterations(t *testing.T) {
 	if got := strings.Count(string(runs), "run\n"); got != 1 {
 		t.Fatalf("main-child invocation count = %d, want 1", got)
 	}
+	assertInterruptDiagnostics(t, stderr.String(), false)
 }
 
 func TestRunLoopSecondSigintHardKillsActiveProcessGroupAndExits130(t *testing.T) {
@@ -1062,9 +1086,10 @@ func TestRunLoopSecondSigintHardKillsActiveProcessGroupAndExits130(t *testing.T)
 
 	interrupts := make(chan os.Signal, 2)
 	resultCh := make(chan int, 1)
+	stderr := new(bytes.Buffer)
 
 	go func() {
-		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), new(bytes.Buffer), interrupts)
+		resultCh <- runLoopWithInterrupts(cfg, nil, new(bytes.Buffer), stderr, interrupts)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -1085,6 +1110,8 @@ func TestRunLoopSecondSigintHardKillsActiveProcessGroupAndExits130(t *testing.T)
 	case <-time.After(3 * time.Second):
 		t.Fatal("runLoopWithInterrupts() did not exit promptly after second SIGINT")
 	}
+
+	assertInterruptDiagnostics(t, stderr.String(), true)
 }
 
 func TestMainDefaultFailContinueStaticItemsCompletesAllItemsAfterNonZeroAndSignaledExits(t *testing.T) {
