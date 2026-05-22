@@ -312,6 +312,7 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 			if err := terminateProcessGroupOnTimeout(cmd.Process.Pid, waitCh); err != nil {
 				return nil, err
 			}
+			emitTimeoutDiagnostic(stderr, "--items-cmd", timeout)
 			capturedStdout.Reset()
 			return nil, errors.New("source command timed out")
 		case sig := <-interrupts:
@@ -358,6 +359,7 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 			if err := terminateProcessGroupOnTimeout(cmd.Process.Pid, waitCh); err != nil {
 				return 0, err
 			}
+			emitTimeoutDiagnostic(stderr, "main child", timeout)
 			return 124, nil
 		case sig := <-interrupts:
 			if !isSigint(sig) {
@@ -507,4 +509,11 @@ func isSigint(sig os.Signal) bool {
 		return false
 	}
 	return sig == os.Interrupt || sig == syscall.SIGINT
+}
+
+func emitTimeoutDiagnostic(stderr io.Writer, commandRole string, timeout time.Duration) {
+	if stderr == nil {
+		return
+	}
+	fmt.Fprintf(stderr, "timeout: %s exceeded %s\n", commandRole, timeout)
 }

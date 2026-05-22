@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+func assertTimeoutDiagnostics(t *testing.T, stderr string, role string, duration string, wantCount int) {
+	t.Helper()
+
+	if got := strings.Count(strings.ToLower(stderr), "timeout"); got < wantCount {
+		t.Fatalf("stderr = %q, want at least %d timeout diagnostic(s), got %d", stderr, wantCount, got)
+	}
+	if got := strings.Count(stderr, role); got < wantCount {
+		t.Fatalf("stderr = %q, want at least %d %q timeout role mention(s), got %d", stderr, wantCount, role, got)
+	}
+	if got := strings.Count(stderr, duration); got < wantCount {
+		t.Fatalf("stderr = %q, want at least %d configured timeout duration mention(s) %q, got %d", stderr, wantCount, duration, got)
+	}
+}
+
 func TestMainHelp(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -484,6 +498,10 @@ func TestMainTimeoutItemsCmdKillsProcessGroupDiscardsCapturedStdoutAndExits1(t *
 	if stdout.Len() != 0 {
 		t.Fatalf("Main() stdout = %q, want empty because timed-out items-cmd stdout must be discarded", stdout.String())
 	}
+	assertTimeoutDiagnostics(t, stderr.String(), "--items-cmd", "100ms", 1)
+	if !strings.Contains(stderr.String(), "item source error: source command timed out") {
+		t.Fatalf("Main() stderr = %q, want source timeout error diagnostic", stderr.String())
+	}
 	if _, err := os.Stat(terminatedFile); err != nil {
 		t.Fatalf("expected timed-out items-cmd process group to receive SIGTERM: %v", err)
 	}
@@ -797,9 +815,7 @@ func TestMainTimeoutMainChildReturnsSynthetic124AndWaitsForChildExit(t *testing.
 	if stdout.Len() != 0 {
 		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 	if elapsed < 300*time.Millisecond {
 		t.Fatalf("Main() returned too quickly after timeout: elapsed=%v, want >= 300ms to wait for child exit", elapsed)
 	}
@@ -819,9 +835,7 @@ func TestMainTimeoutMainChildEscalatesToSigkillAfterGracePeriod(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 	if elapsed < 2*time.Second {
 		t.Fatalf("Main() returned too quickly for SIGKILL timeout path: elapsed=%v, want >= 2s", elapsed)
 	}
@@ -849,9 +863,7 @@ func TestMainTimeoutCleansUpGrandchildrenInProcessGroup(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("Main() stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 	if _, err := os.Stat(terminatedFile); err != nil {
 		t.Fatalf("expected timeout cleanup to terminate grandchild in spawned process group: %v", err)
 	}
@@ -873,9 +885,7 @@ func TestMainTimeoutUnderDefaultContinueFixedLoopsCompletesAttemptsAndExitsZero(
 	if stdout.String() != "1\n2\n3\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n3\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 3)
 }
 
 func TestMainTimeoutUnderUntilSuccessFixedLoopsExhaustionReturns124(t *testing.T) {
@@ -894,9 +904,7 @@ func TestMainTimeoutUnderUntilSuccessFixedLoopsExhaustionReturns124(t *testing.T
 	if stdout.String() != "1\n2\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 2)
 }
 
 func TestMainTimeoutUnderFailStopDaemonExits124(t *testing.T) {
@@ -915,9 +923,7 @@ func TestMainTimeoutUnderFailStopDaemonExits124(t *testing.T) {
 	if stdout.String() != "1\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 }
 
 func TestMainTimeoutUnderUntilSuccessDaemonRetriesAndStopsOnSuccess(t *testing.T) {
@@ -936,9 +942,7 @@ func TestMainTimeoutUnderUntilSuccessDaemonRetriesAndStopsOnSuccess(t *testing.T
 	if stdout.String() != "1\n2\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "1\\n2\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 }
 
 func TestRunLoopInterruptCleansUpGrandchildrenInProcessGroup(t *testing.T) {
@@ -1141,9 +1145,7 @@ func TestMainDefaultFailContinueDynamicItemsCompletesBatchAfterNonZeroAndTimeout
 	if stdout.String() != "a\nb\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\nb\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 }
 
 func TestMainFailStopDynamicItemsStopsOnTimeoutAndReturns124(t *testing.T) {
@@ -1162,9 +1164,7 @@ func TestMainFailStopDynamicItemsStopsOnTimeoutAndReturns124(t *testing.T) {
 	if stdout.String() != "a\n" {
 		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "a\\n")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
-	}
+	assertTimeoutDiagnostics(t, stderr.String(), "main child", "100ms", 1)
 }
 
 func TestMainUsageErrorsExit2(t *testing.T) {
