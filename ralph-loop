@@ -37,7 +37,7 @@ json_array_ids_with_status() {
 }
 
 worktree_dirty() {
-  [ -n "$(git status --porcelain)" ]
+  [ -n "$(git status --porcelain -- . ':(exclude).beads/issues.jsonl')" ]
 }
 
 branch_not_uptodate() {
@@ -126,18 +126,6 @@ while :; do
     continue
   fi
 
-  active_assigned=$(active_assigned_ralph_work)
-  if ! active_assigned_count=$(json_array_len <<<"$active_assigned"); then
-    sleep_before_retry "Could not parse active assigned Beads JSON."
-    continue
-  fi
-  if [ "$active_assigned_count" -gt 0 ]; then
-    echo "Found active ralph issue(s) already assigned to AI Agent; not launching another worker:"
-    json_array_ids_with_status <<<"$active_assigned"
-    sleep_before_retry "Resolve, complete, or unclaim the assigned issue first."
-    continue
-  fi
-
   ready=$(bd ready --label ralph --json 2>/dev/null || echo "[]")
   if ! ready_count=$(json_array_len <<<"$ready"); then
     sleep_before_retry "Could not parse ready Beads JSON."
@@ -167,18 +155,6 @@ while :; do
     echo "ralph agent returned with an unpushed/unrebased branch; stopping loop for human review."
     print_worktree_status
     write_failure_handoff "Agent returned with branch ahead, behind, or diverged from upstream."
-    exit 1
-  fi
-
-  active_assigned=$(active_assigned_ralph_work)
-  if ! active_assigned_count=$(json_array_len <<<"$active_assigned"); then
-    sleep_before_retry "Could not parse active assigned Beads JSON after agent run."
-    continue
-  fi
-  if [ "$active_assigned_count" -gt 0 ]; then
-    echo "ralph agent returned while issue(s) remain actively assigned to AI Agent; stopping loop to avoid stranded work:"
-    json_array_ids_with_status <<<"$active_assigned"
-    write_failure_handoff "Agent returned while ralph issue(s) remain open, in_progress, or blocked and assigned to AI Agent."
     exit 1
   fi
 

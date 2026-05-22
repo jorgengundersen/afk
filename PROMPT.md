@@ -62,21 +62,13 @@ For coding/testing standards, use `specs/coding-testing-standards.html`; there a
    - Never claim epics described as "container only" or "claim one child at a time".
    - If the iteration finds no non-epic issue and no epic that is direct work, this is a no-work terminal state. Confirm that no claim command succeeded (`CLAIMED_ID` is unset), then final-answer: `No ready ralph work found; no issue claimed.`
 
-3. Before claiming, check worktree hygiene:
+3. Before claiming, check worktree hygiene while ignoring the tracked Beads export:
 
    ```bash
-   git status --short --branch
+   git status --short --branch -- . ':(exclude).beads/issues.jsonl'
    ```
 
-   Do not claim work if the worktree has any dirty files you did not create, including `.beads/issues.jsonl`. A pre-existing dirty Beads export is a no-claim terminal state because later `bd export -o .beads/issues.jsonl` would overwrite or mix unrelated issue-state changes.
-
-   If `.beads/issues.jsonl` is dirty before claiming:
-
-   ```bash
-   git diff -- .beads/issues.jsonl
-   ```
-
-   Then final-answer with a concise dirty-beads-export handoff. Do **not** run `bd export -o .beads/issues.jsonl`, do not commit the dirty export, and do not claim an issue.
+   A pre-existing `.beads/issues.jsonl` diff is allowed because it is a generated planning/history export; do not treat that file alone as a no-claim condition.
 
    If any other file is dirty before claiming and you did not create it in this session, final-answer with a concise dirty-worktree handoff and do not claim an issue.
 
