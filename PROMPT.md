@@ -13,6 +13,21 @@ A final answer is allowed only after one of these terminal states is verified:
 
 If you are about to give a plan-only final answer, make the next tool call instead.
 
+Forbidden final answers include:
+
+- "Need follow prompt with tools not final yet."
+- "I will continue..."
+- "Next I would..."
+- Any summary that claims tests, Beads close/export, git commit, git push, or verification happened unless those commands succeeded in this session and their outputs were observed.
+- Any placeholder commit hash such as `<commit-hash>`.
+
+Once any claim command succeeds, `CLAIMED_ID` is a hard invariant for the rest of the session. Every final answer after a claim must be backed by one of these verified states:
+
+- `bd show "$CLAIMED_ID" --json` shows `status: closed`, `git status --short --branch` is clean/up-to-date, and the relevant commit hash was read from git; or
+- `bd show "$CLAIMED_ID" --json` shows the issue is not `in_progress`, the issue is unassigned or explicitly handed to `human`, `git status --short --branch` is clean/up-to-date, and any Beads export/WIP commits were pushed.
+
+If you cannot continue implementation after claiming, do **not** final-answer. Use the blocked/human cleanup path below before final-answering.
+
 ## Source of truth
 
 Use the active HTML specs as product context. Do not infer requirements beyond the claimed issue and these specs:
@@ -249,18 +264,20 @@ When implementation is done:
 
    Use a conventional commit message such as `fix: ...`, `feat: ...`, `docs: ...`, or `chore(beads): ...`.
 
-6. Verify terminal state:
+6. Verify terminal state and read the real commit hash:
 
    ```bash
    git status --short --branch
    bd show "$CLAIMED_ID" --json
+   git rev-parse --short HEAD
    ```
 
    Required verification:
    - `git status --short --branch` shows a clean worktree and the branch is up to date with origin.
    - `bd show "$CLAIMED_ID" --json` shows `status: closed`.
+   - `git rev-parse --short HEAD` prints the actual commit hash to report.
 
-7. Final-answer with: what changed, tests/checks run, closed issue id, and commit hash.
+7. Final-answer with: what changed, tests/checks run, closed issue id, and the actual commit hash from `git rev-parse --short HEAD`.
 
 ## Failure recovery before any final answer
 
@@ -270,5 +287,8 @@ Before final-answering, run this self-check:
 - If `CLAIMED_ID` is still `in_progress`, either continue working or move it through the blocked/human terminal state above.
 - If any Beads state changed, ensure `bd dolt commit`, `bd dolt push`, and `bd export -o .beads/issues.jsonl` have been handled.
 - If `.beads/issues.jsonl` changed after closing/noting, commit and push that export before final-answering.
+- If you will report tests/checks, confirm each reported command succeeded in this session; otherwise run it now or do not report it.
+- If you will report a commit, run `git rev-parse --short HEAD` after the commit/push and report that exact hash only.
+- If you are not at a verified terminal state, do not final-answer; make the next tool call needed to reach completion or blocked/human cleanup.
 - Never leave `CLAIMED_ID` in `in_progress` unless the process is still actively working in this same session.
 - Never final-answer with uncommitted worktree changes unless no issue was claimed and the final answer is explicitly a dirty-worktree no-claim handoff.

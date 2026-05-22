@@ -1,16 +1,127 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cleanup() { kill 0 2>/dev/null; wait 2>/dev/null; }
+SLEEP_SECONDS="${RALPH_LOOP_SLEEP_SECONDS:-60}"
+AGENT_TIMEOUT="${RALPH_AGENT_TIMEOUT:-45m}"
+PROVIDER="${RALPH_PROVIDER:-openai-codex}"
+MODEL="${RALPH_MODEL:-gpt-5.3-codex}"
+
+cleanup() {
+  trap - EXIT INT TERM
+  local child_pids
+  child_pids="$(jobs -pr || true)"
+  if [ -n "$child_pids" ]; then
+    kill $child_pids 2>/dev/null || true
+    wait 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT INT TERM
 
+sleep_before_retry() {
+  echo "$1 Sleeping ${SLEEP_SECONDS}s..."
+  sleep "$SLEEP_SECONDS"
+}
+
+json_array_len() {
+  python3 -c 'import json, sys; data = json.load(sys.stdin); print(len(data) if isinstance(data, list) else 0)'
+}
+
+json_array_ids() {
+  python3 -c 'import json, sys; data = json.load(sys.stdin); print("\n".join(str(item.get("id", "<unknown>")) for item in data if isinstance(item, dict)))'
+}
+
+worktree_dirty() {
+  [ -n "$(git status --porcelain)" ]
+}
+
+branch_not_uptodate() {
+  local branch_line
+  branch_line="$(git status --short --branch | head -n 1)"
+  [[ "$branch_line" == *"ahead"* || "$branch_line" == *"behind"* || "$branch_line" == *"diverged"* ]]
+}
+
+print_worktree_status() {
+  git status --short --branch
+}
+
+in_progress_ralph_work() {
+  bd list --status in_progress --label ralph --assignee "AI Agent" --json 2>/dev/null || echo "[]"
+}
+
 while :; do
-  ready=$(bd ready --label ralph --json 2>/dev/null || echo "[]")
-  if [ "$ready" = "[]" ] || [ -z "$ready" ]; then
-    echo "No ready work. Sleeping 60s..."
-    sleep 60
+  if worktree_dirty; then
+    echo "Worktree is dirty; not launching ralph agent."
+    print_worktree_status
+    sleep_before_retry "Reconcile or commit the dirty worktree first."
     continue
   fi
 
-  pi --mode json --provider openai-codex --model gpt-5.3-codex @PROMPT.md "follow PROMPT.md"
+  if branch_not_uptodate; then
+    echo "Branch is not up to date with its upstream; not launching ralph agent."
+    print_worktree_status
+    sleep_before_retry "Push/pull/rebase the branch first."
+    continue
+  fi
+
+  in_progress=$(in_progress_ralph_work)
+  if ! in_progress_count=$(json_array_len <<<"$in_progress"); then
+    sleep_before_retry "Could not parse in-progress Beads JSON."
+    continue
+  fi
+  if [ "$in_progress_count" -gt 0 ]; then
+    echo "Found in-progress ralph issue(s) assigned to AI Agent; not launching another worker:"
+    json_array_ids <<<"$in_progress"
+    sleep_before_retry "Resolve, complete, or unclaim the in-progress issue first."
+    continue
+  fi
+
+  ready=$(bd ready --label ralph --json 2>/dev/null || echo "[]")
+  if ! ready_count=$(json_array_len <<<"$ready"); then
+    sleep_before_retry "Could not parse ready Beads JSON."
+    continue
+  fi
+  if [ "$ready_count" -eq 0 ]; then
+    sleep_before_retry "No ready work."
+    continue
+  fi
+
+  echo "Launching ralph agent for ${ready_count} ready issue(s)."
+  agent_status=0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --foreground "$AGENT_TIMEOUT" \
+      pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md" || agent_status=$?
+  else
+    pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md" || agent_status=$?
+  fi
+
+  if [ "$agent_status" -ne 0 ]; then
+    echo "ralph agent exited with status ${agent_status}."
+  fi
+
+  if worktree_dirty; then
+    echo "ralph agent returned with a dirty worktree; stopping loop to avoid repeated unsafe launches."
+    print_worktree_status
+    exit 1
+  fi
+
+  if branch_not_uptodate; then
+    echo "ralph agent returned with an unpushed/unrebased branch; stopping loop for human review."
+    print_worktree_status
+    exit 1
+  fi
+
+  in_progress=$(in_progress_ralph_work)
+  if ! in_progress_count=$(json_array_len <<<"$in_progress"); then
+    sleep_before_retry "Could not parse in-progress Beads JSON after agent run."
+    continue
+  fi
+  if [ "$in_progress_count" -gt 0 ]; then
+    echo "ralph agent returned while issue(s) remain in_progress; stopping loop to avoid stranded work:"
+    json_array_ids <<<"$in_progress"
+    exit 1
+  fi
+
+  if [ "$agent_status" -ne 0 ]; then
+    sleep_before_retry "Backing off after agent failure."
+  fi
 done
