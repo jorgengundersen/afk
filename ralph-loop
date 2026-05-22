@@ -6,6 +6,7 @@ AGENT_TIMEOUT="${RALPH_AGENT_TIMEOUT:-45m}"
 PROVIDER="${RALPH_PROVIDER:-openai-codex}"
 MODEL="${RALPH_MODEL:-gpt-5.3-codex}"
 PI_JSON_FORMATTER="${RALPH_PI_JSON_FORMATTER:-./pi-json-human}"
+FAILURE_HANDOFF="${RALPH_FAILURE_HANDOFF:-tmp/ralph-loop-last-failure.md}"
 
 cleanup() {
   trap - EXIT INT TERM
@@ -29,6 +30,10 @@ json_array_len() {
 
 json_array_ids() {
   python3 -c 'import json, sys; data = json.load(sys.stdin); print("\n".join(str(item.get("id", "<unknown>")) for item in data if isinstance(item, dict)))'
+}
+
+json_array_ids_with_status() {
+  python3 -c 'import json, sys; data = json.load(sys.stdin); print("\n".join("{}\t{}".format(item.get("id", "<unknown>"), item.get("status", "<unknown>")) for item in data if isinstance(item, dict)))'
 }
 
 worktree_dirty() {
@@ -67,8 +72,43 @@ run_ralph_agent() {
     pi --mode json --provider "$PROVIDER" --model "$MODEL" @PROMPT.md "follow PROMPT.md"
 }
 
-in_progress_ralph_work() {
-  bd list --status in_progress --label ralph --assignee "AI Agent" --json 2>/dev/null || echo "[]"
+active_assigned_ralph_work() {
+  bd list --label ralph --assignee "AI Agent" --json 2>/dev/null \
+    | python3 -c 'import json, sys; data = json.load(sys.stdin); active = [item for item in data if isinstance(item, dict) and item.get("status") in {"open", "in_progress", "blocked"}]; print(json.dumps(active))' \
+    || echo "[]"
+}
+
+write_failure_handoff() {
+  local reason="$1"
+  mkdir -p "$(dirname "$FAILURE_HANDOFF")"
+  {
+    echo "# Ralph Loop Failure Handoff"
+    echo
+    echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo
+    echo "## Reason"
+    echo
+    echo "$reason"
+    echo
+    echo "## Git status"
+    echo
+    echo '```text'
+    git status --short --branch || true
+    echo '```'
+    echo
+    echo "## Git diff stat"
+    echo
+    echo '```text'
+    git diff --stat || true
+    echo '```'
+    echo
+    echo "## Active assigned ralph work"
+    echo
+    echo '```json'
+    active_assigned_ralph_work | python3 -m json.tool || true
+    echo '```'
+  } >"$FAILURE_HANDOFF"
+  echo "Wrote failure handoff: $FAILURE_HANDOFF"
 }
 
 while :; do
@@ -86,15 +126,15 @@ while :; do
     continue
   fi
 
-  in_progress=$(in_progress_ralph_work)
-  if ! in_progress_count=$(json_array_len <<<"$in_progress"); then
-    sleep_before_retry "Could not parse in-progress Beads JSON."
+  active_assigned=$(active_assigned_ralph_work)
+  if ! active_assigned_count=$(json_array_len <<<"$active_assigned"); then
+    sleep_before_retry "Could not parse active assigned Beads JSON."
     continue
   fi
-  if [ "$in_progress_count" -gt 0 ]; then
-    echo "Found in-progress ralph issue(s) assigned to AI Agent; not launching another worker:"
-    json_array_ids <<<"$in_progress"
-    sleep_before_retry "Resolve, complete, or unclaim the in-progress issue first."
+  if [ "$active_assigned_count" -gt 0 ]; then
+    echo "Found active ralph issue(s) already assigned to AI Agent; not launching another worker:"
+    json_array_ids_with_status <<<"$active_assigned"
+    sleep_before_retry "Resolve, complete, or unclaim the assigned issue first."
     continue
   fi
 
@@ -119,23 +159,26 @@ while :; do
   if worktree_dirty; then
     echo "ralph agent returned with a dirty worktree; stopping loop to avoid repeated unsafe launches."
     print_worktree_status
+    write_failure_handoff "Agent returned with uncommitted worktree changes."
     exit 1
   fi
 
   if branch_not_uptodate; then
     echo "ralph agent returned with an unpushed/unrebased branch; stopping loop for human review."
     print_worktree_status
+    write_failure_handoff "Agent returned with branch ahead, behind, or diverged from upstream."
     exit 1
   fi
 
-  in_progress=$(in_progress_ralph_work)
-  if ! in_progress_count=$(json_array_len <<<"$in_progress"); then
-    sleep_before_retry "Could not parse in-progress Beads JSON after agent run."
+  active_assigned=$(active_assigned_ralph_work)
+  if ! active_assigned_count=$(json_array_len <<<"$active_assigned"); then
+    sleep_before_retry "Could not parse active assigned Beads JSON after agent run."
     continue
   fi
-  if [ "$in_progress_count" -gt 0 ]; then
-    echo "ralph agent returned while issue(s) remain in_progress; stopping loop to avoid stranded work:"
-    json_array_ids <<<"$in_progress"
+  if [ "$active_assigned_count" -gt 0 ]; then
+    echo "ralph agent returned while issue(s) remain actively assigned to AI Agent; stopping loop to avoid stranded work:"
+    json_array_ids_with_status <<<"$active_assigned"
+    write_failure_handoff "Agent returned while ralph issue(s) remain open, in_progress, or blocked and assigned to AI Agent."
     exit 1
   fi
 

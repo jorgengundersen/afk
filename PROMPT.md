@@ -96,6 +96,15 @@ For coding/testing standards, use `specs/coding-testing-standards.html`; there a
    bd show "$CLAIMED_ID" --json
    ```
 
+   The inspected issue must show `status: in_progress` and `assignee: AI Agent` before implementation starts. If `bd update --claim` returned successfully but the issue is still `open`, repair that claim state once:
+
+   ```bash
+   bd update "$CLAIMED_ID" --status=in_progress --assignee="AI Agent" --json
+   bd show "$CLAIMED_ID" --json
+   ```
+
+   If the issue still is not `in_progress` and assigned to `AI Agent`, do not edit files. Use the blocked/human cleanup path before final-answering.
+
    Do not final-answer here.
 
 ## Implementation workflow
