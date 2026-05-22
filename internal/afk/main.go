@@ -8,7 +8,16 @@ import (
 const usageText = `Usage: afk [flags] -- command [args...]
 
 Flags:
-  -h, --help  Show help
+  -h, --help              Show help
+  -n, --loops N           Run main child N times
+  -d, --daemon            Run forever until interrupted
+      --items TEXT        Newline-delimited or JSON-array item batch
+      --items-cmd CMD     Shell command that outputs item batches
+      --sleep DURATION    Sleep between empty --items-cmd batches (default 1m)
+      --empty-sleeps N    Stop after N consecutive empty batches (default 0 = no limit)
+      --fail MODE         Failure policy: continue or stop (default continue)
+      --until-success     Retry until main child exits 0 (with --loops or --daemon)
+      --timeout DURATION  Per-command timeout for main child and --items-cmd
 `
 
 func Main(args []string, stdin io.Reader, stdout, stderr io.Writer) int {

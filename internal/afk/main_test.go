@@ -61,6 +61,23 @@ func TestMainHelp(t *testing.T) {
 		t.Fatalf("Main() help output missing usage line:\n%s", got)
 	}
 
+	for _, want := range []string{
+		"-h, --help",
+		"-n, --loops",
+		"-d, --daemon",
+		"--items",
+		"--items-cmd",
+		"--sleep",
+		"--empty-sleeps",
+		"--fail",
+		"--until-success",
+		"--timeout",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Main() help output missing %q:\n%s", want, got)
+		}
+	}
+
 	if stderr.Len() != 0 {
 		t.Fatalf("Main() wrote to stderr for help: %q", stderr.String())
 	}
