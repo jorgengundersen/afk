@@ -64,27 +64,16 @@ func runFixedNonItemLoops(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
-		if cfg.UntilSuccess {
-			if exitCode == 0 {
-				return 0
-			}
+		decision := decideMainChildExit(cfg.Fail, cfg.UntilSuccess, exitCode)
+		if decision.recordLastNonZero {
 			lastNonZero = exitCode
-			continue
 		}
-
-		if exitCode != 0 && cfg.Fail == "stop" {
-			return exitCode
+		if decision.stop {
+			return decision.exitCode
 		}
 	}
 
-	if cfg.UntilSuccess {
-		if lastNonZero != 0 {
-			return lastNonZero
-		}
-		return 1
-	}
-
-	return 0
+	return finalExitAfterCompletedWork(cfg.UntilSuccess, lastNonZero)
 }
 
 func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
@@ -99,15 +88,9 @@ func runDaemonNonItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer,
 			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
-		if cfg.UntilSuccess {
-			if exitCode == 0 {
-				return 0
-			}
-			continue
-		}
-
-		if exitCode != 0 && cfg.Fail == "stop" {
-			return exitCode
+		decision := decideMainChildExit(cfg.Fail, cfg.UntilSuccess, exitCode)
+		if decision.stop {
+			return decision.exitCode
 		}
 	}
 }
@@ -130,12 +113,13 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, in
 			return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 		}
 
-		if exitCode != 0 && cfg.Fail == "stop" {
-			return exitCode
+		decision := decideMainChildExit(cfg.Fail, cfg.UntilSuccess, exitCode)
+		if decision.stop {
+			return decision.exitCode
 		}
 	}
 
-	return 0
+	return finalExitAfterCompletedWork(cfg.UntilSuccess, 0)
 }
 
 func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
@@ -158,7 +142,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 
 		if len(items) == 0 {
 			if remainingEmptySleeps <= 0 {
-				return 0
+				return finalExitAfterCompletedWork(cfg.UntilSuccess, 0)
 			}
 			remainingEmptySleeps--
 			if cfg.Sleep > 0 {
@@ -180,13 +164,14 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}
 
-			if exitCode != 0 && cfg.Fail == "stop" {
-				return exitCode
+			decision := decideMainChildExit(cfg.Fail, cfg.UntilSuccess, exitCode)
+			if decision.stop {
+				return decision.exitCode
 			}
 			invocationIndex++
 		}
 
-		return 0
+		return finalExitAfterCompletedWork(cfg.UntilSuccess, 0)
 	}
 }
 
@@ -227,8 +212,9 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}
 
-			if exitCode != 0 && cfg.Fail == "stop" {
-				return exitCode
+			decision := decideMainChildExit(cfg.Fail, cfg.UntilSuccess, exitCode)
+			if decision.stop {
+				return decision.exitCode
 			}
 			invocationIndex++
 		}
