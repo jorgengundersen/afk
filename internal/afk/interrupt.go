@@ -22,10 +22,12 @@ func interruptibleSleep(duration time.Duration, interrupts <-chan os.Signal) boo
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 
+	interruptState := newInterruptShutdownState()
+
 	select {
 	case <-timer.C:
 		return false
 	case sig := <-interrupts:
-		return sig == syscall.SIGINT || sig == os.Interrupt
+		return interruptState.observe(sig) == interruptDecisionStartGracefulShutdown
 	}
 }

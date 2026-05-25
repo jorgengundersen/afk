@@ -264,6 +264,7 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 	waitDone := false
 	stdoutDone := false
 	var waitErr error
+	interruptState := newInterruptShutdownState()
 
 	for !(waitDone && stdoutDone) {
 		select {
@@ -297,11 +298,12 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 			}
 			return nil, errors.New("source command timed out")
 		case sig := <-interrupts:
-			if !isSigint(sig) {
+			decision := interruptState.observe(sig)
+			if decision == interruptDecisionIgnore {
 				continue
 			}
 			if !waitDone {
-				escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+				escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts, &interruptState)
 				emitInterruptDiagnostic(stderr)
 				if escalated {
 					emitSecondInterruptEscalationDiagnostic(stderr)
@@ -375,6 +377,8 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 		defer timer.Stop()
 	}
 
+	interruptState := newInterruptShutdownState()
+
 	for {
 		select {
 		case err := <-waitCh:
@@ -386,10 +390,11 @@ func runMainChild(argv []string, stdin io.Reader, stdout, stderr io.Writer, env 
 			emitTimeoutDiagnostic(stderr, "main child", timeout)
 			return 124, nil
 		case sig := <-interrupts:
-			if !isSigint(sig) {
+			decision := interruptState.observe(sig)
+			if decision == interruptDecisionIgnore {
 				continue
 			}
-			escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+			escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts, &interruptState)
 			emitInterruptDiagnostic(stderr)
 			if escalated {
 				emitSecondInterruptEscalationDiagnostic(stderr)
@@ -488,7 +493,7 @@ func terminateProcessGroup(pid int, waitCh <-chan error, failurePrefix string) e
 	}
 }
 
-func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan os.Signal) bool {
+func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan os.Signal, interruptState *interruptShutdownState) bool {
 	_ = signalProcessGroup(pid, syscall.SIGINT)
 
 	grace := time.NewTimer(5 * time.Second)
@@ -498,7 +503,7 @@ func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan o
 	case <-waitCh:
 		return false
 	case sig := <-interrupts:
-		if isSigint(sig) {
+		if interruptState.observe(sig) == interruptDecisionForceHardShutdown {
 			hardInterruptShutdown(pid, waitCh)
 			return true
 		}
@@ -513,7 +518,7 @@ func gracefulInterruptShutdown(pid int, waitCh <-chan error, interrupts <-chan o
 	case <-waitCh:
 		return false
 	case sig := <-interrupts:
-		if isSigint(sig) {
+		if interruptState.observe(sig) == interruptDecisionForceHardShutdown {
 			hardInterruptShutdown(pid, waitCh)
 			return true
 		}
@@ -545,9 +550,11 @@ func pendingSigint(interrupts <-chan os.Signal) bool {
 		return false
 	}
 
+	interruptState := newInterruptShutdownState()
+
 	select {
 	case sig := <-interrupts:
-		return isSigint(sig)
+		return interruptState.observe(sig) == interruptDecisionStartGracefulShutdown
 	default:
 		return false
 	}
