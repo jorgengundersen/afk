@@ -489,6 +489,33 @@ func TestMainItemsCmdDoesNotConsumeInheritedParentStdin(t *testing.T) {
 	}
 }
 
+func TestMainItemsCmdStdoutLimitExits1AndDoesNotParsePartialBatch(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	oversizedBytes := itemsCommandStdoutLimitBytes + 1
+	itemsCmd := fmt.Sprintf(`printf 'first-item\n'; head -c %d /dev/zero | tr '\000' a`, oversizedBytes)
+
+	exitCode := Main(
+		[]string{"--items-cmd", itemsCmd, "--", "sh", "-c", `printf "main:%s\n" "$AFK_ITEM"`},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 1 {
+		t.Fatalf("Main() exit code = %d, want 1", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("Main() stdout = %q, want empty because oversized items-cmd stdout must not be parsed", stdout.String())
+	}
+	lowerStderr := strings.ToLower(stderr.String())
+	for _, want := range []string{"item source error", "--items-cmd", "stdout", "limit", "exceeded"} {
+		if !strings.Contains(lowerStderr, want) {
+			t.Fatalf("Main() stderr = %q, want oversized stdout diagnostic containing %q", stderr.String(), want)
+		}
+	}
+}
+
 func TestMainItemsCmdNonZeroExitDiscardsCapturedStdoutAndExits1(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -14,6 +14,8 @@ import (
 
 var errInterrupted = errors.New("interrupted")
 
+const itemsCommandStdoutLimitBytes = 8 * 1024 * 1024
+
 func RunLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer) int {
 	return runLoopWithInterrupts(cfg, stdin, stdout, stderr, nil)
 }
@@ -240,12 +242,25 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 	cmd.Stderr = stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var capturedStdout bytes.Buffer
-	cmd.Stdout = &capturedStdout
-
-	if err := cmd.Start(); err != nil {
+	stdoutRead, stdoutWrite, err := os.Pipe()
+	if err != nil {
 		return nil, err
 	}
+	cmd.Stdout = stdoutWrite
+
+	if err := cmd.Start(); err != nil {
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		return nil, err
+	}
+	_ = stdoutWrite.Close()
+
+	var capturedStdout bytes.Buffer
+	copyCh := make(chan error, 1)
+	go func() {
+		defer stdoutRead.Close()
+		copyCh <- copyBoundedItemsCommandStdout(&capturedStdout, stdoutRead)
+	}()
 
 	waitCh := make(chan error, 1)
 	go func() {
@@ -260,32 +275,91 @@ func runItemsCommand(itemsCmd string, stderr io.Writer, timeout time.Duration, i
 		defer timer.Stop()
 	}
 
-	for {
+	waitDone := false
+	stdoutDone := false
+	var waitErr error
+
+	for !(waitDone && stdoutDone) {
 		select {
-		case err := <-waitCh:
-			if err != nil {
+		case copyErr := <-copyCh:
+			stdoutDone = true
+			copyCh = nil
+			if copyErr != nil {
 				capturedStdout.Reset()
-				return nil, err
+				if !waitDone {
+					if err := terminateProcessGroupAfterSourceCaptureFailure(cmd.Process.Pid, waitCh); err != nil {
+						return nil, err
+					}
+					waitDone = true
+					waitCh = nil
+				}
+				return nil, copyErr
 			}
-			return ParseStaticItems(capturedStdout.String())
+		case err := <-waitCh:
+			waitDone = true
+			waitCh = nil
+			waitErr = err
+			timeoutCh = nil
 		case <-timeoutCh:
 			if err := terminateProcessGroupOnTimeout(cmd.Process.Pid, waitCh); err != nil {
 				return nil, err
 			}
 			emitTimeoutDiagnostic(stderr, "--items-cmd", timeout)
 			capturedStdout.Reset()
+			if copyCh != nil {
+				<-copyCh
+			}
 			return nil, errors.New("source command timed out")
 		case sig := <-interrupts:
 			if !isSigint(sig) {
 				continue
 			}
-			escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
-			emitInterruptDiagnostic(stderr)
-			if escalated {
-				emitSecondInterruptEscalationDiagnostic(stderr)
+			if !waitDone {
+				escalated := gracefulInterruptShutdown(cmd.Process.Pid, waitCh, interrupts)
+				emitInterruptDiagnostic(stderr)
+				if escalated {
+					emitSecondInterruptEscalationDiagnostic(stderr)
+				}
+			} else {
+				emitInterruptDiagnostic(stderr)
 			}
 			capturedStdout.Reset()
+			if copyCh != nil {
+				<-copyCh
+			}
 			return nil, errInterrupted
+		}
+	}
+
+	if waitErr != nil {
+		capturedStdout.Reset()
+		return nil, waitErr
+	}
+	return ParseStaticItems(capturedStdout.String())
+}
+
+func copyBoundedItemsCommandStdout(dst *bytes.Buffer, src io.Reader) error {
+	buf := make([]byte, 32*1024)
+	captured := 0
+
+	for {
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			if captured+n > itemsCommandStdoutLimitBytes {
+				remaining := itemsCommandStdoutLimitBytes - captured
+				if remaining > 0 {
+					_, _ = dst.Write(buf[:remaining])
+				}
+				return fmt.Errorf("--items-cmd stdout limit exceeded (%d bytes)", itemsCommandStdoutLimitBytes)
+			}
+			_, _ = dst.Write(buf[:n])
+			captured += n
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return readErr
 		}
 	}
 }
@@ -401,8 +475,16 @@ func signalProcessGroup(pid int, sig syscall.Signal) error {
 }
 
 func terminateProcessGroupOnTimeout(pid int, waitCh <-chan error) error {
+	return terminateProcessGroup(pid, waitCh, "timeout cleanup failed")
+}
+
+func terminateProcessGroupAfterSourceCaptureFailure(pid int, waitCh <-chan error) error {
+	return terminateProcessGroup(pid, waitCh, "item source cleanup failed")
+}
+
+func terminateProcessGroup(pid int, waitCh <-chan error, failurePrefix string) error {
 	if err := signalProcessGroup(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("timeout cleanup failed: %w", err)
+		return fmt.Errorf("%s: %w", failurePrefix, err)
 	}
 
 	grace := time.NewTimer(2 * time.Second)
@@ -413,7 +495,7 @@ func terminateProcessGroupOnTimeout(pid int, waitCh <-chan error) error {
 		return nil
 	case <-grace.C:
 		if err := signalProcessGroup(pid, syscall.SIGKILL); err != nil {
-			return fmt.Errorf("timeout cleanup failed: %w", err)
+			return fmt.Errorf("%s: %w", failurePrefix, err)
 		}
 		<-waitCh
 		return nil
