@@ -42,9 +42,9 @@ func runLoopWithInterrupts(cfg Config, stdin io.Reader, stdout, stderr io.Writer
 
 	if cfg.ItemsCmdExplicit {
 		if cfg.Daemon {
-			return runDaemonDynamicItemLoop(cfg, stdout, stderr, interrupts)
+			return runDaemonDynamicItemLoop(cfg, stdin, stdout, stderr, interrupts)
 		}
-		return runNonDaemonDynamicItemLoop(cfg, stdout, stderr, interrupts)
+		return runNonDaemonDynamicItemLoop(cfg, stdin, stdout, stderr, interrupts)
 	}
 
 	return 0
@@ -122,7 +122,7 @@ func runStaticItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, in
 	return finalExitAfterCompletedWork(cfg.UntilSuccess, 0)
 }
 
-func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
+func runNonDaemonDynamicItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	invocationIndex := 1
 	remainingEmptySleeps := cfg.EmptySleeps
 
@@ -159,7 +159,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 			}
 
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
-			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
+			exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
 				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}
@@ -175,7 +175,7 @@ func runNonDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupt
 	}
 }
 
-func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
+func runDaemonDynamicItemLoop(cfg Config, stdin io.Reader, stdout, stderr io.Writer, interrupts <-chan os.Signal) int {
 	invocationIndex := 1
 
 	for {
@@ -207,7 +207,7 @@ func runDaemonDynamicItemLoop(cfg Config, stdout, stderr io.Writer, interrupts <
 			}
 
 			env := EnvForItemInvocation(os.Environ(), invocationIndex, item, itemIndex, len(items))
-			exitCode, err := runMainChild(cfg.CommandArgv, nil, stdout, stderr, env, cfg.Timeout, interrupts)
+			exitCode, err := runMainChild(cfg.CommandArgv, stdin, stdout, stderr, env, cfg.Timeout, interrupts)
 			if err != nil {
 				return mapMainChildExecutionError(cfg.CommandArgv[0], err, stderr)
 			}

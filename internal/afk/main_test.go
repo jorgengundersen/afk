@@ -489,6 +489,48 @@ func TestMainItemsCmdDoesNotConsumeInheritedParentStdin(t *testing.T) {
 	}
 }
 
+func TestMainItemsCmdNonDaemonMainChildInheritsParentStdin(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--items-cmd", `printf "item\n"`, "--", "sh", "-c", `cat`},
+		strings.NewReader("x\n"),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "x\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "x\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestMainItemsCmdDaemonMainChildInheritsParentStdin(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main(
+		[]string{"--daemon", "--items-cmd", `printf "item\n"`, "--fail", "stop", "--", "sh", "-c", `cat; if [ "$AFK_INDEX" -eq 1 ]; then exit 7; fi`},
+		strings.NewReader("x\n"),
+		&stdout,
+		&stderr,
+	)
+	if exitCode != 7 {
+		t.Fatalf("Main() exit code = %d, want 7", exitCode)
+	}
+	if stdout.String() != "x\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "x\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainItemsCmdStdoutLimitExits1AndDoesNotParsePartialBatch(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
