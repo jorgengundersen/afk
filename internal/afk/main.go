@@ -12,7 +12,7 @@ Flags:
   -n, --loops N           Run main child N times
   -d, --daemon            Run forever until interrupted
       --items TEXT        Newline-delimited or JSON-array item batch
-      --items-cmd CMD     Shell command that outputs item batches
+      --items-cmd CMD     Shell command that outputs item batches (max captured stdout 8 MiB)
       --sleep DURATION    Sleep between empty --items-cmd batches (default 1m)
       --empty-sleeps N    Stop after N consecutive empty batches (default 0 = no limit)
       --fail MODE         Failure policy: continue or stop (default continue)

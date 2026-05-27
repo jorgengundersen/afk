@@ -111,7 +111,8 @@ internal/afk/signal.go      // interrupt handling boundary</code></pre>
     <li>The main child command after <code>--</code> inherits stdin and passes through stdout and stderr.</li>
     <li>The main child command's stdout and stderr are not captured, merged, buffered, parsed, prefixed, or transformed by <code>afk</code>.</li>
     <li><code>--items-cmd</code> stdout is captured for item parsing and is not echoed to stdout; its stderr is written to <code>afk</code> stderr unchanged.</li>
-    <li>If a <code>--items-cmd</code> invocation exits non-zero or times out, its captured stdout is discarded and not parsed as items.</li>
+    <li>The maximum captured <code>--items-cmd</code> stdout per invocation is <code>8 MiB</code>.</li>
+    <li>If a <code>--items-cmd</code> invocation exits non-zero, times out, or exceeds the capture limit, its captured stdout is discarded and not parsed as items.</li>
     <li><code>--items-cmd</code> stdin is closed or connected to an empty reader, never inherited from interactive stdin.</li>
     <li>Non-zero <code>--items-cmd</code> exit is an <code>afk</code> source error.</li>
     <li>Use timers from <code>time</code> and signals from <code>os/signal</code>.</li>

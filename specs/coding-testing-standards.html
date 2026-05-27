@@ -138,6 +138,7 @@ type Runner interface {
     <li>Main child stdout and stderr must pass through unchanged on their original streams.</li>
     <li>Do not merge stdout and stderr, prefix main child lines, strip bytes, or reinterpret encodings.</li>
     <li><code>--items-cmd</code> stdout is captured as item-source data, not passed through; its stderr is passed through unchanged.</li>
+    <li><code>--items-cmd</code> stdout capture is bounded to <code>8 MiB</code> per invocation; if exceeded, treat it as a source error and discard captured stdout.</li>
     <li>Routine status is disabled by default in v1.</li>
     <li>Required errors, usage errors, timeout messages, and interrupt messages are minimal, human-readable, and stderr-only.</li>
     <li>Timeout diagnostics must communicate that a timeout occurred, which spawned command timed out (<code>main child</code> or <code>--items-cmd</code>), and the configured timeout duration.</li>
@@ -194,7 +195,7 @@ if code != 0 || string(out) != "hi\nhi\nhi\n" { t.Fatalf("...") }</code></pre>
     <li>Static JSON array items run once per element.</li>
     <li>Empty static item sources produce zero main child invocations and exit <code>0</code>.</li>
     <li>Dynamic <code>--items-cmd</code> refreshes batches and handles empty batches.</li>
-    <li>If <code>--items-cmd</code> exits non-zero or times out, its captured stdout is discarded and not parsed as items.</li>
+    <li>If <code>--items-cmd</code> exits non-zero, times out, or exceeds its <code>8 MiB</code> captured-stdout limit, its captured stdout is discarded and not parsed as items.</li>
     <li><code>--sleep</code> only applies to empty dynamic item batches.</li>
     <li>When neither <code>--until-success</code> nor an explicit <code>--fail</code> flag is provided, the effective failure policy defaults to <code>--fail continue</code>.</li>
     <li><code>--fail continue</code>, <code>--fail stop</code>, and <code>--until-success</code> produce documented exit behavior.</li>

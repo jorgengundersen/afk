@@ -72,6 +72,7 @@ func TestMainHelp(t *testing.T) {
 		"--fail",
 		"--until-success",
 		"--timeout",
+		"8 MiB",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Main() help output missing %q:\n%s", want, got)

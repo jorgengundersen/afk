@@ -71,6 +71,7 @@ Environment construction behavior:
 
 - Treat `--items-cmd` as shell code, not as an argv-safe command list.
 - Do not build `--items-cmd` from untrusted interpolated input.
+- Each `--items-cmd` invocation captures at most 8 MiB of stdout for item parsing; if stdout exceeds that limit, `afk` discards the captured stdout from that invocation and exits with source error code `1`.
 - Each `--items-cmd` invocation inherits the parent environment with `AFK_INDEX`, `AFK_ITEM`, `AFK_ITEM_INDEX`, and `AFK_ITEM_COUNT` removed.
 - `--items-cmd` receives no loop context because it runs before the next main-child invocation exists.
 

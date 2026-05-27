@@ -228,6 +228,7 @@
     <ul>
       <li>Invoke <code>--items-cmd</code> once to produce the next item batch.</li>
       <li>If that invocation exits non-zero, discard any captured stdout from that invocation, treat it as a source error, and exit <code>1</code>.</li>
+      <li>Each invocation captures at most <code>8 MiB</code> of stdout for item parsing. If stdout exceeds that size, discard the captured stdout from that invocation, treat it as a source error, and exit <code>1</code>.</li>
       <li>If that invocation produces one or more parsed items, process that batch one item at a time, in batch order, by running the main child command once per item.</li>
       <li>In non-daemon mode, after fully processing the first non-empty batch, exit 0 unless stopped earlier by the selected main child failure policy or another documented error condition.</li>
       <li>In daemon mode, after the current batch is exhausted, invoke <code>--items-cmd</code> again to fetch the next batch.</li>
@@ -445,7 +446,7 @@
   <section>
     <h2>11. Output</h2>
     <p>
-      Main child stdout and stderr pass through directly. <code>afk</code> does not parse, render, or transform main child output. <code>--items-cmd</code> stdout is item-source data and is captured for parsing; if a <code>--items-cmd</code> invocation exits non-zero or times out, its captured stdout is discarded and not parsed as items. Its stderr passes through unchanged.
+      Main child stdout and stderr pass through directly. <code>afk</code> does not parse, render, or transform main child output. <code>--items-cmd</code> stdout is item-source data and is captured for parsing with a maximum captured size of <code>8 MiB</code> per invocation; if a <code>--items-cmd</code> invocation exits non-zero, times out, or exceeds that capture limit, its captured stdout is discarded and not parsed as items. Its stderr passes through unchanged.
     </p>
     <p>
       By default, <code>afk</code> prints no routine status lines. Stdout belongs to the main child command,
@@ -556,6 +557,7 @@
       <li><code>afk --help</code> prints usage to stdout, exits <code>0</code>, and does not require <code>--</code>.</li>
       <li>Unknown flags, missing main child command, and invalid flag combinations exit <code>2</code>.</li>
       <li>A non-zero <code>--items-cmd</code> exit discards that invocation's captured stdout, is treated as a source error, and exits <code>1</code>.</li>
+      <li>If <code>--items-cmd</code> stdout exceeds <code>8 MiB</code> in one invocation, <code>afk</code> discards that invocation's captured stdout, treats it as a source error, and exits <code>1</code>.</li>
       <li><code>--timeout</code> terminates a hung main child process group and applies failure policy.</li>
       <li><code>--timeout</code> terminates a hung <code>--items-cmd</code> process group and exits <code>1</code>.</li>
       <li>Main child stdout/stderr are passed through unchanged on their original streams.</li>
