@@ -12,7 +12,6 @@ You may give a final response only for one of these verified outcomes:
 
 - no claimable ralph work exists;
 - a pre-claim safety check found dirty non-Beads worktree changes;
-- an active ralph issue is already assigned to `AI Agent`, so a new worker should not claim another issue.
 
 Otherwise, claim exactly one issue and move to CLAIMED.
 
