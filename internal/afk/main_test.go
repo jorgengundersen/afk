@@ -172,6 +172,22 @@ func TestMainRunsStaticItemsInSourceOrderWithItemContextEnv(t *testing.T) {
 	}
 }
 
+func TestMainStaticJSONNumberItemsPreserveOriginalValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"--items", "[9007199254740993]", "--", "sh", "-c", `printf "%s\n" "$AFK_ITEM"`}, nil, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Main() exit code = %d, want 0", exitCode)
+	}
+	if stdout.String() != "9007199254740993\n" {
+		t.Fatalf("Main() stdout = %q, want %q", stdout.String(), "9007199254740993\\n")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Main() stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestMainStaticEmptyItemSourcesSkipMainChildAndExitZero(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -40,6 +40,18 @@ func TestParseStaticItems_JSONTopLevelArray(t *testing.T) {
 	}
 }
 
+func TestParseStaticItems_JSONNumbersKeepOriginalValueWhenCompacted(t *testing.T) {
+	items, err := ParseStaticItems("[9007199254740993, 1.0, 1e+21]")
+	if err != nil {
+		t.Fatalf("ParseStaticItems() error = %v", err)
+	}
+
+	want := []string{"9007199254740993", "1.0", "1e+21"}
+	if !reflect.DeepEqual(items, want) {
+		t.Fatalf("items = %#v, want %#v", items, want)
+	}
+}
+
 func TestParseStaticItems_EmptyJSONArrayMeansNoItems(t *testing.T) {
 	items, err := ParseStaticItems("[]")
 	if err != nil {

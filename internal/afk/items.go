@@ -1,6 +1,7 @@
 package afk
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"unicode"
@@ -13,16 +14,9 @@ func ParseStaticItems(input string) ([]string, error) {
 		return parseNewlineItems(input), nil
 	}
 
-	var parsed any
-	if err := json.Unmarshal([]byte(input), &parsed); err == nil {
-		array, isArray := parsed.([]any)
-		if isArray {
-			return parseJSONArrayItems(array)
-		}
-
-		// Valid JSON that is not an array falls back to newline parsing using
-		// the original input bytes.
-		return parseNewlineItems(input), nil
+	var array []json.RawMessage
+	if err := json.Unmarshal([]byte(input), &array); err == nil {
+		return parseJSONArrayItems(array)
 	}
 
 	return parseNewlineItems(input), nil
@@ -43,20 +37,24 @@ func shouldParseAsNewlineWithoutJSONAttempt(input string) bool {
 	return true
 }
 
-func parseJSONArrayItems(array []any) ([]string, error) {
+func parseJSONArrayItems(array []json.RawMessage) ([]string, error) {
 	items := make([]string, 0, len(array))
 	for _, element := range array {
-		s, isString := element.(string)
-		if isString {
+		trimmed := bytes.TrimSpace(element)
+		if len(trimmed) > 0 && trimmed[0] == '"' {
+			var s string
+			if err := json.Unmarshal(trimmed, &s); err != nil {
+				return nil, err
+			}
 			items = append(items, s)
 			continue
 		}
 
-		encoded, err := json.Marshal(element)
-		if err != nil {
+		var compacted bytes.Buffer
+		if err := json.Compact(&compacted, element); err != nil {
 			return nil, err
 		}
-		items = append(items, string(encoded))
+		items = append(items, compacted.String())
 	}
 
 	return items, nil
