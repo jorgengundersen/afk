@@ -80,6 +80,10 @@ Do not infer requirements beyond the claimed issue and these specs. For standard
      bd ready --label ralph --parent <epic-id> --exclude-type epic --json
      ```
 
+   - If the ready item is an epic and `bd show <epic-id> --long --json`
+     reports all children closed / `epic_closeable: true`, claim or close the
+     epic as cleanup work. Run required checks if relevant, close the epic,
+     sync/export Beads, commit `.beads/issues.jsonl`, and push.
    - Never claim an epic described as a container or as child-only work.
    - If no claimable issue exists, final response: no ready ralph work found; no issue claimed.
 
