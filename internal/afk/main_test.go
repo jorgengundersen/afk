@@ -73,10 +73,14 @@ func TestMainHelp(t *testing.T) {
 		"--until-success",
 		"--timeout",
 		"8 MiB",
+		"default 0 = exit after first empty batch (no sleep)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Main() help output missing %q:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "default 0 = no limit") {
+		t.Fatalf("Main() help output must not claim --empty-sleeps 0 means no limit:\n%s", got)
 	}
 
 	if stderr.Len() != 0 {
